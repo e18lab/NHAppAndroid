@@ -61,7 +61,8 @@
     "avatarUploadNotImplemented": "サーバー側でアバターのアップロードがまだ実装されていません。"
   },
   "bookcard": {
-    "collectingInfo": "情報を取得中"
+    "collectingInfo": "情報を取得中",
+    "hiddenByBlacklist": "ブラックリストにより非表示"
   },
   "comments": {
     "title": "コメント",

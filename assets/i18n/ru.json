@@ -61,7 +61,8 @@
     "avatarUploadNotImplemented": "Загрузка аватара пока не реализована на сервере."
   },
   "bookcard": {
-    "collectingInfo": "Собирается информация"
+    "collectingInfo": "Собирается информация",
+    "hiddenByBlacklist": "Скрыто чёрным списком"
   },
   "comments": {
     "title": "Комментарии",

@@ -33,6 +33,7 @@ import { usePageFilter } from "@/context/PageFilterContext";
 import { SortKey, useSort } from "@/context/SortContext";
 import { useFilterTags } from "@/context/TagFilterContext";
 import { useOnlineMe } from "@/hooks/useOnlineMe";
+import { useBlacklistNameSet } from "@/lib/blacklistFilter";
 import { useTheme } from "@/lib/ThemeContext";
 import { useI18n } from "@/lib/i18n/I18nContext";
 import { useTopBarAction } from "@/context/TopBarActionContext";
@@ -212,6 +213,7 @@ export function SearchBar() {
   const { openDrawer } = useDrawer();
   const { sort, setSort } = useSort();
   const { filters, setMode } = useFilterTags() as any;
+  const blacklistNames = useBlacklistNameSet();
   const { pagesQuery, setPagesQuery, clearPagesQuery } = usePageFilter();
   const router = useRouter();
   const pathname = usePathname();
@@ -443,6 +445,11 @@ export function SearchBar() {
     if (activeLanguage === "chinese") return t("explore.language.chinese") || "Chinese";
     return t("explore.language.all") || "Все языки";
   }, [activeLanguage, t]);
+  const availableLanguageOptions = useMemo(
+    () =>
+      LANGUAGE_OPTIONS.filter((name) => !blacklistNames.has(name.toLowerCase())),
+    [blacklistNames]
+  );
 
   const applyLanguageFilter = useCallback(
     (next: LanguageOption | "all") => {
@@ -455,6 +462,12 @@ export function SearchBar() {
     },
     [setMode]
   );
+  useEffect(() => {
+    if (!activeLanguage) return;
+    if (!availableLanguageOptions.includes(activeLanguage)) {
+      applyLanguageFilter("all");
+    }
+  }, [activeLanguage, applyLanguageFilter, availableLanguageOptions]);
 
   const lobbyConnSnap = useSyncExternalStore(
     subscribeToLobbyCloudStats,
@@ -593,9 +606,15 @@ export function SearchBar() {
       icon: (c: string) => <Feather name="globe" size={15} color={c} />,
       children: [
         { value: "lang:all", label: t("explore.language.all") || "Все языки" },
-        { value: "lang:english", label: t("explore.language.english") || "English" },
-        { value: "lang:japanese", label: t("explore.language.japanese") || "Japanese" },
-        { value: "lang:chinese", label: t("explore.language.chinese") || "Chinese" },
+        ...(availableLanguageOptions.includes("english")
+          ? [{ value: "lang:english", label: t("explore.language.english") || "English" }]
+          : []),
+        ...(availableLanguageOptions.includes("japanese")
+          ? [{ value: "lang:japanese", label: t("explore.language.japanese") || "Japanese" }]
+          : []),
+        ...(availableLanguageOptions.includes("chinese")
+          ? [{ value: "lang:chinese", label: t("explore.language.chinese") || "Chinese" }]
+          : []),
       ],
     },
     {

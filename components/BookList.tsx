@@ -165,7 +165,6 @@ export default function BookList<T extends Book = Book>({
       estCardH: estH,
     };
   }, [data, width, base, horizontal]);
-
   const isSingleCol = !horizontal && cols === 1;
   const contentScale = isSingleCol ? 0.45 : 0.65;
 

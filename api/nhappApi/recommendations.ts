@@ -34,6 +34,7 @@ import {
 } from "@/api/nhappApi/recommendationLib";
 import { initCdn } from "@/api/v2";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getBlacklistStateCached } from "@/lib/blacklistFilter";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -612,6 +613,24 @@ function passesActiveFilters(
   return true;
 }
 
+function rowMatchesBlacklist(
+  row: RecommendationLibBatchRow,
+  blockedNames: Set<string>
+): boolean {
+  if (!blockedNames.size) return false;
+  const hasBlocked = (arr: string[]) =>
+    arr.some((v) => blockedNames.has(String(v).trim().toLowerCase()));
+  return (
+    hasBlocked((row.tags ?? []).map((v) => String(v))) ||
+    hasBlocked(parseArr(row.artists)) ||
+    hasBlocked(parseArr(row.parodies)) ||
+    hasBlocked(parseArr(row.characters)) ||
+    hasBlocked(parseArr(row.groups)) ||
+    hasBlocked(parseArr(row.categories)) ||
+    hasBlocked(parseArr(row.languages))
+  );
+}
+
 /**
  * Builds a Record of API params representing all include filters.
  * Multiple values for the same field are joined with "," (API treats as AND).
@@ -859,10 +878,31 @@ export async function generateRecommendations(): Promise<RecommendationResult> {
   if (_cache) return _cache;
 
   await initCdn();
-  const [profile, activeFilters] = await Promise.all([
+  const [rawProfile, activeFilters, blacklist] = await Promise.all([
     buildRecommendationProfile(),
     loadActiveFilters(),
+    getBlacklistStateCached(),
   ]);
+  const blockedNames = new Set(
+    (blacklist.names ?? []).map((v) => String(v).trim().toLowerCase()).filter(Boolean)
+  );
+  const profile: RecommendationProfile = blockedNames.size
+    ? {
+        ...rawProfile,
+        tags: rawProfile.tags.filter((x) => !blockedNames.has(x.name.toLowerCase())),
+        artists: rawProfile.artists.filter((x) => !blockedNames.has(x.name.toLowerCase())),
+        parodies: rawProfile.parodies.filter((x) => !blockedNames.has(x.name.toLowerCase())),
+        characters: rawProfile.characters.filter((x) => !blockedNames.has(x.name.toLowerCase())),
+        groups: rawProfile.groups.filter((x) => !blockedNames.has(x.name.toLowerCase())),
+        languages: rawProfile.languages.filter((x) => !blockedNames.has(x.toLowerCase())),
+        searchQueriesForApi: rawProfile.searchQueriesForApi.filter(
+          (x) => !blockedNames.has(x.toLowerCase())
+        ),
+        tagCalibrationPreview: rawProfile.tagCalibrationPreview?.filter(
+          (x) => !blockedNames.has(x.name.toLowerCase())
+        ),
+      }
+    : rawProfile;
   const filterIncludes = activeFilters.filter((f) => f.mode === "include");
   const filterExcludes = activeFilters.filter((f) => f.mode === "exclude");
 
@@ -1008,6 +1048,7 @@ export async function generateRecommendations(): Promise<RecommendationResult> {
       const id = Number(row.book_id);
       if (!Number.isFinite(id) || id <= 0) continue;
       if (excludeIds.has(id)) continue;
+      if (rowMatchesBlacklist(row, blockedNames)) continue;
       if (!passesActiveFilters(row, filterExcludes)) continue;
 
       bookScores.set(id, (bookScores.get(id) ?? 0) + def.termScore);
@@ -1029,6 +1070,7 @@ export async function generateRecommendations(): Promise<RecommendationResult> {
       const id = Number(row.book_id);
       if (!Number.isFinite(id) || id <= 0) continue;
       if (excludeIds.has(id)) continue;
+      if (rowMatchesBlacklist(row, blockedNames)) continue;
       if (!passesActiveFilters(row, filterExcludes)) continue;
       if (seenLocal.has(id)) continue;
       seenLocal.add(id);

@@ -61,7 +61,8 @@
     "avatarUploadNotImplemented": "服务器端尚未实现头像上传功能。"
   },
   "bookcard": {
-    "collectingInfo": "信息收集中"
+    "collectingInfo": "信息收集中",
+    "hiddenByBlacklist": "已被黑名单隐藏"
   },
   "comments": {
     "title": "评论",

@@ -37,6 +37,7 @@ import { isElectron, showOpenDialog } from "@/electron/bridge";
 import { useToast } from "@/components/ToastProvider";
 import { useTopBarAction } from "@/context/TopBarActionContext";
 import { FilterDropdown, type SelectItem } from "@/components/uikit/FilterDropdown";
+import { setBlacklistCache } from "@/lib/blacklistFilter";
 
 interface ProfileEditFormData {
   username: string;
@@ -535,6 +536,7 @@ export default function ProfileEditScreen() {
       if (added.length || removed.length) {
         await updateBlacklist({ added, removed });
         baselineBlacklistIdsRef.current = currIds;
+        setBlacklistCache(blacklistTags);
       }
 
       setError(null);
@@ -583,6 +585,7 @@ export default function ProfileEditScreen() {
       .then((bl) => {
         const tags = Array.isArray(bl.tags) ? bl.tags : [];
         setBlacklistTags(tags);
+        setBlacklistCache(tags);
         baselineBlacklistIdsRef.current = new Set(tags.map((t) => t.id));
       })
       .catch((e) => {

@@ -61,7 +61,8 @@
     "avatarUploadNotImplemented": "Avatar upload is not implemented on the server yet."
   },
   "bookcard": {
-    "collectingInfo": "Collecting info"
+    "collectingInfo": "Collecting info",
+    "hiddenByBlacklist": "Hidden by blacklist"
   },
   "comments": {
     "title": "Comments",

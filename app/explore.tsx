@@ -26,6 +26,7 @@ import { usePageFilter } from "@/context/PageFilterContext";
 import { useSort } from "@/context/SortContext";
 import { useFilterTags } from "@/context/TagFilterContext";
 import { useGridConfig } from "@/hooks/useGridConfig";
+import { isBookBlacklisted, useBlacklistNameSet, useBlacklistSet } from "@/lib/blacklistFilter";
 import { useTheme } from "@/lib/ThemeContext";
 import { useI18n } from "@/lib/i18n/I18nContext";
 import { BROWSE_CARDS_PER_PAGE } from "@/utils/browseGridPageSize";
@@ -81,6 +82,8 @@ export default function ExploreScreen() {
   const excStr = JSON.stringify(activeExcludes);
 
   const [books, setBooks] = useState<Book[]>([]);
+  const blacklistIds = useBlacklistSet();
+  const blacklistNames = useBlacklistNameSet();
   const [totalPages, setTotal] = useState(1);
   const [currentPage, setPage] = useState(1);
   const [favorites, setFav] = useState<Set<number>>(new Set());
@@ -397,6 +400,20 @@ export default function ExploreScreen() {
   const showNoResults =
     resultState === "no-results" ||
     (imsearchMode && resultState === "error" && books.length === 0);
+  const strictBlacklistMode = imsearchMode || query.trim().length > 0;
+  const visibleBooks = useMemo(
+    () =>
+      strictBlacklistMode && (blacklistIds.size || blacklistNames.size)
+        ? books.filter((b) => !isBookBlacklisted(b, blacklistIds, blacklistNames))
+        : books,
+    [blacklistIds, blacklistNames, books, strictBlacklistMode]
+  );
+  const showNoResultsWithBlacklist =
+    showNoResults ||
+    (strictBlacklistMode &&
+      resultState !== "loading" &&
+      resultState !== "error" &&
+      visibleBooks.length === 0);
 
   const reason = dateFilterActive ? "dates" : hasTagFilters ? "filters" : "general";
 
@@ -515,11 +532,11 @@ export default function ExploreScreen() {
   ]);
 
   const showListSkeleton =
-    resultState === "loading" && books.length === 0;
+    resultState === "loading" && visibleBooks.length === 0;
 
   return (
     <View style={styles.container}>
-      {showNoResults && (
+      {showNoResultsWithBlacklist && (
         <NoResultsPanel
           title={noResPanelTitle}
           subtitle={noResPanelSubtitle}
@@ -536,17 +553,17 @@ export default function ExploreScreen() {
         />
       )}
 
-      {!showNoResults && (
+      {!showNoResultsWithBlacklist && (
         <>
           <BookList
-            data={books}
+            data={visibleBooks}
             loading={showListSkeleton}
             refreshing={false}
             onRefresh={onRefresh}
             isFavorite={(id) => favorites.has(id)}
             onToggleFavorite={toggleFav}
             onPress={(id) => {
-              const b = books.find((x) => x.id === id);
+              const b = visibleBooks.find((x) => x.id === id);
               router.push({
                 pathname: "/book/[id]",
                 params: {

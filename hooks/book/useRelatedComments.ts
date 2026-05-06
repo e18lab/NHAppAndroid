@@ -1,5 +1,6 @@
 import type { Book } from "@/api/nhappApi/types";
 import type { GalleryComment } from "@/api/nhappApi/types";
+import { ApiError } from "@/api/v2/client";
 import { getGalleryComments, getRelatedGalleries } from "@/api/v2";
 import { commentToGalleryComment, galleryRelatedToBook } from "@/api/v2/compat";
 import { useCallback, useEffect, useState } from "react";
@@ -11,6 +12,9 @@ export const useRelatedComments = (book: Book | null) => {
   const [allComments, setAllComments] = useState<GalleryComment[]>([]);
   const [visibleCount, setVisibleCount] = useState(20);
   const [cmtLoading, setCmtLoading] = useState(false);
+  const isRateLimitError = (err: unknown) =>
+    (err instanceof ApiError && err.status === 429) ||
+    String((err as any)?.message || "").toLowerCase().includes("rate limit");
 
   const refetchRelated = useCallback(async () => {
     if (!book) return;
@@ -43,9 +47,11 @@ export const useRelatedComments = (book: Book | null) => {
       setAllComments(cs.map(commentToGalleryComment));
       setVisibleCount(20);
     } catch (err: any) {
-      console.error("[useRelatedComments] Error fetching comments:", err?.message || err);
-      setAllComments([]);
-      setVisibleCount(0);
+      if (!isRateLimitError(err)) {
+        console.warn("[useRelatedComments] Error fetching comments:", err?.message || err);
+        setAllComments([]);
+        setVisibleCount(0);
+      }
     } finally {
       setCmtLoading(false);
     }

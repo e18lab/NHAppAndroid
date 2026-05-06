@@ -1,11 +1,18 @@
+import { Feather } from "@expo/vector-icons";
 import { format } from "date-fns";
-import React, { useMemo, useState } from "react";
+import { BlurTargetView, BlurView } from "expo-blur";
+import React, { useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
 import type { Book } from "@/api/nhappApi/types";
 import { buildImageFallbacks } from "@/components/buildImageFallbacks";
 import SmartImageWithRetry from "@/components/SmartImageWithRetry";
 import { useFilterTags } from "@/context/TagFilterContext";
+import {
+  isBookBlacklisted,
+  useBlacklistNameSet,
+  useBlacklistSet,
+} from "@/lib/blacklistFilter";
 import { useI18n } from "@/lib/i18n/I18nContext";
 import { useTheme } from "@/lib/ThemeContext";
 import { makeCardStyles } from "../BookCard.styles";
@@ -55,9 +62,16 @@ export default function BookCardClassic({
     () => makeCardStyles(colors, cardWidth, contentScale),
     [colors, cardWidth, contentScale]
   );
+  const blacklistIds = useBlacklistSet();
+  const blacklistNames = useBlacklistNameSet();
+  const isBlacklisted = useMemo(
+    () => isBookBlacklisted(book, blacklistIds, blacklistNames),
+    [blacklistIds, blacklistNames, book]
+  );
 
   const [hovered, setHovered] = useState(false);
   const [tagsExpanded, setTagsExpanded] = useState(false);
+  const blurTargetRef = useRef<View | null>(null);
 
   const fullTitle = book.title?.pretty ?? "";
 
@@ -235,6 +249,8 @@ export default function BookCardClassic({
     !!langShort || (typeof pages === "number" && pages > 0) || !!year || scoreClamped != null;
 
   const collectingInfoText = t("bookcard.collectingInfo");
+  const hiddenByBlacklistText =
+    t("bookcard.hiddenByBlacklist") || "Скрыто чёрным списком";
 
   const downloadingLabel = (book as any)?.__downloading ? "Downloading" : null;
   const downloadingProgressRaw = (book as any)?.__downloadProgress;
@@ -260,12 +276,33 @@ export default function BookCardClassic({
       >
         {/* ── Cover ── */}
         <View style={[styles.imageWrap, localStyles.imageWrap]}>
-          <SmartImageWithRetry
-            sources={sources}
-            style={styles.cover}
-            maxRetries={3}
-            retryDelay={1000}
-          />
+          <BlurTargetView ref={blurTargetRef} style={StyleSheet.absoluteFillObject}>
+            <SmartImageWithRetry
+              sources={sources}
+              style={styles.cover}
+              maxRetries={3}
+              retryDelay={1000}
+            />
+          </BlurTargetView>
+          {isBlacklisted && (
+            <BlurView
+              pointerEvents="none"
+              intensity={100}
+              tint="dark"
+              blurMethod={Platform.OS === "android" ? "dimezisBlurViewSdk31Plus" : undefined}
+              blurTarget={blurTargetRef}
+              style={StyleSheet.absoluteFillObject}
+            />
+          )}
+          {isBlacklisted && <View pointerEvents="none" style={localStyles.coverBlacklistedDim} />}
+          {isBlacklisted && (
+            <View pointerEvents="none" style={localStyles.blacklistNotice}>
+              <Feather name="eye-off" size={12} color="#FFFFFF" />
+              <Text style={localStyles.blacklistNoticeText} numberOfLines={1}>
+                {hiddenByBlacklistText}
+              </Text>
+            </View>
+          )}
           {/* flag intentionally removed (requested) */}
           {isNew && (
             <View pointerEvents="none" style={localStyles.newBadge}>
@@ -433,6 +470,30 @@ const localStyles = StyleSheet.create({
   },
   cardPressed: {
     opacity: 0.92,
+  },
+  coverBlacklistedDim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0, 0, 0, 0)",
+  },
+  blacklistNotice: {
+    position: "absolute",
+    left: 8,
+    right: 8,
+    bottom: 8,
+    minHeight: 26,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    backgroundColor: "rgba(0,0,0,0.62)",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  blacklistNoticeText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "700",
+    lineHeight: 13,
   },
   imageWrap: {
     borderRadius: 12,

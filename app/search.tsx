@@ -25,6 +25,7 @@ import { useDateRange } from "@/context/DateRangeContext";
 import { useSort } from "@/context/SortContext";
 import { useFilterTags } from "@/context/TagFilterContext";
 import { useTheme } from "@/lib/ThemeContext";
+import { isBookBlacklisted, useBlacklistNameSet, useBlacklistSet } from "@/lib/blacklistFilter";
 import { setImsearchPendingFile } from "@/lib/imsearchPendingUpload";
 import { useI18n } from "@/lib/i18n/I18nContext";
 import { BROWSE_CARDS_PER_PAGE } from "@/utils/browseGridPageSize";
@@ -113,6 +114,8 @@ export default function SearchScreen() {
   const router = useRouter();
   const { includes, excludes } = useFilterTags();
   const { sort } = useSort();
+  const blacklistIds = useBlacklistSet();
+  const blacklistNames = useBlacklistNameSet();
   const { uploaded, clearUploaded } = useDateRange();
   const dateFilterActive = !!uploaded;
   const params = useLocalSearchParams<{ query?: string | string[] }>();
@@ -196,7 +199,12 @@ export default function SearchScreen() {
           sort,
           per_page: BROWSE_CARDS_PER_PAGE,
         });
-        setSug(res.result.map(galleryCardToBook));
+        const next = res.result.map(galleryCardToBook);
+        const filtered =
+          blacklistIds.size || blacklistNames.size
+            ? next.filter((b) => !isBookBlacklisted(b, blacklistIds, blacklistNames))
+            : next;
+        setSug(filtered);
       } finally {
         setLoad(false);
       }
