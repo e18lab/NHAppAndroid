@@ -7,6 +7,7 @@ import type { Book, Tag } from "@/api/nhappApi/types";
 import { galleryToBook } from "@/api/v2/compat";
 import { initCdn, resolveThumbUrl } from "@/api/v2/config";
 import { getGallery } from "@/api/v2/galleries";
+import { resolveLoopbackToPackagerHost } from "@/config/api";
 
 function isElectronRenderer(): boolean {
   return typeof window !== "undefined" && !!(window as any).electron?.isElectron;
@@ -44,9 +45,10 @@ async function fetchJsonCompat<T>(url: string): Promise<T> {
 }
 
 export function nhappApiBase(): string {
-  return (
+  const raw = (
     process.env.EXPO_PUBLIC_API_BASE_URL || "https://nhapp-api.onrender.com"
   ).replace(/\/$/, "");
+  return resolveLoopbackToPackagerHost(raw).replace(/\/$/, "");
 }
 
 export interface RecommendationLibBatchRow {

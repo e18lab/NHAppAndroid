@@ -45,6 +45,15 @@ const DateRangeContext = createContext<Ctx>({
 
 const STORAGE_KEY = "dateRange:v5";
 
+function normalizeUploadedFilter(val: string | null | undefined): string | null {
+  if (!val) return null;
+  const v = String(val).trim();
+  if (!v) return null;
+  if (v.startsWith("uploaded:")) return v;
+  if (/^[<>]=?\d+[hdmy]$/i.test(v)) return `uploaded:${v}`;
+  return v;
+}
+
 export function DateRangeProvider({ children }: PropsWithChildren) {
   const [uploaded, setUploadedState] = useState<string | null>(null);
   const [customRangeLabel, setCustomRangeLabel] = useState<string | null>(null);
@@ -62,7 +71,7 @@ export function DateRangeProvider({ children }: PropsWithChildren) {
           lastCustomFrom?: string | null;
           lastCustomTo?: string | null;
         };
-        setUploadedState(parsed?.uploaded ?? null);
+        setUploadedState(normalizeUploadedFilter(parsed?.uploaded));
         setCustomRangeLabel(parsed?.customRangeLabel ?? null);
         setLastCustomFromState(parsed?.lastCustomFrom ?? null);
         setLastCustomToState(parsed?.lastCustomTo ?? null);
@@ -103,15 +112,16 @@ export function DateRangeProvider({ children }: PropsWithChildren) {
 
   const setUploaded = useCallback(
     (val: string | null, displayLabel?: string | null) => {
-      setUploadedState(val);
+      const normalized = normalizeUploadedFilter(val);
+      setUploadedState(normalized);
       const nextLabel =
-        val == null || !val.startsWith("uploaded:>")
+        normalized == null || !normalized.startsWith("uploaded:>")
           ? null
           : displayLabel !== undefined
             ? displayLabel
             : customRangeLabel;
       setCustomRangeLabel(nextLabel);
-      void persist(val, nextLabel, lastCustomFrom, lastCustomTo);
+      void persist(normalized, nextLabel, lastCustomFrom, lastCustomTo);
     },
     [persist, customRangeLabel, lastCustomFrom, lastCustomTo]
   );
@@ -127,11 +137,12 @@ export function DateRangeProvider({ children }: PropsWithChildren) {
 
   const setCustomRangeApplied = useCallback(
     (rangeQuery: string, displayLabel: string, fromISO: string, toISO: string) => {
-      setUploadedState(rangeQuery);
+      const normalized = normalizeUploadedFilter(rangeQuery);
+      setUploadedState(normalized);
       setCustomRangeLabel(displayLabel);
       setLastCustomFromState(fromISO);
       setLastCustomToState(toISO);
-      void persist(rangeQuery, displayLabel, fromISO, toISO);
+      void persist(normalized, displayLabel, fromISO, toISO);
     },
     [persist]
   );

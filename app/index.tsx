@@ -7,6 +7,7 @@ import PaginationBar from "@/components/PaginationBar";
 import { requestStoragePush, subscribeToStorageApplied } from "@/api/nhappApi/cloudStorage";
 import { INFINITE_SCROLL_KEY } from "@/components/settings/keys";
 import { useDateRange } from "@/context/DateRangeContext";
+import { usePageFilter } from "@/context/PageFilterContext";
 import { useSort } from "@/context/SortContext";
 import { useFilterTags } from "@/context/TagFilterContext";
 import { useGridConfig } from "@/hooks/useGridConfig";
@@ -68,6 +69,7 @@ export default function HomeScreen() {
 
   const [query, setQuery] = useState(urlQ ?? "");
   const { sort, setSort } = useSort();
+  const { pagesQuery } = usePageFilter();
   const {
     includes,
     excludes,
@@ -134,14 +136,15 @@ export default function HomeScreen() {
       JSON.stringify({
         v: 3,
         ipp: BROWSE_CARDS_PER_PAGE,
-        q: query.trim(),
+        q: [query.trim(), pagesQuery].filter(Boolean).join(" ").trim(),
         sort,
         inc: activeIncludes,
         exc: activeExcludes,
         page: currentPage,
         uploaded: uploaded ?? null,
+        pages: pagesQuery,
       }),
-    [query, sort, incStr, excStr, currentPage, uploaded]
+    [query, sort, incStr, excStr, currentPage, uploaded, pagesQuery]
   );
 
   useEffect(() => {
@@ -150,7 +153,7 @@ export default function HomeScreen() {
 
   const fetchPage = useCallback(
     async (page: number, keyForCache: string, force = false, swr = false, append = false) => {
-      const q = query.trim();
+      const q = [query.trim(), pagesQuery].filter(Boolean).join(" ").trim();
       const myReqId = ++reqIdRef.current;
       const isFirstLoad = booksLengthRef.current === 0;
 
@@ -241,6 +244,7 @@ export default function HomeScreen() {
       activeIncludes,
       activeExcludes,
       infiniteScroll,
+      pagesQuery,
     ]
   );
 
@@ -258,7 +262,7 @@ export default function HomeScreen() {
   useEffect(() => {
     setPage(1);
     scrollToTop(scrollRef);
-  }, [query, sort, incStr, excStr, uploaded]);
+  }, [query, sort, incStr, excStr, uploaded, pagesQuery]);
 
   useEffect(() => {
     if (totalPages < 1) return;
@@ -436,11 +440,7 @@ export default function HomeScreen() {
 
   const showNoResults = resultState === "no-results";
 
-  const reason = dateFilterActive
-    ? "dates"
-    : hasTagFilters
-    ? "filters"
-    : "general";
+  const reason = dateFilterActive ? "dates" : hasTagFilters ? "filters" : "general";
 
   const noResTitle =
     reason === "dates"
@@ -558,12 +558,13 @@ export default function HomeScreen() {
                     const nextCacheKey = JSON.stringify({
                       v: 3,
                       ipp: BROWSE_CARDS_PER_PAGE,
-                      q: query.trim(),
+                      q: [query.trim(), pagesQuery].filter(Boolean).join(" ").trim(),
                       sort,
                       inc: activeIncludes,
                       exc: activeExcludes,
                       page: nextPage,
                       uploaded: uploaded ?? null,
+                      pages: pagesQuery,
                     });
                     skipPageChangeRef.current = true;
                     fetchPage(nextPage, nextCacheKey, false, false, true);
@@ -582,12 +583,13 @@ export default function HomeScreen() {
                 const paginationCacheKey = JSON.stringify({
                   v: 3,
                   ipp: BROWSE_CARDS_PER_PAGE,
-                  q: query.trim(),
+                  q: [query.trim(), pagesQuery].filter(Boolean).join(" ").trim(),
                   sort,
                   inc: activeIncludes,
                   exc: activeExcludes,
                   page: p,
                   uploaded: uploaded ?? null,
+                  pages: pagesQuery,
                 });
                 fetchPage(p, paginationCacheKey, false, false, false);
                 setPage(p);

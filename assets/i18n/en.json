@@ -120,6 +120,32 @@
     "apply": "Apply"
   },
   "explore": {
+    "filter": {
+      "language": "Language",
+      "pages": "Pages",
+      "sortTitle": "Sort",
+      "dateTitle": "Search by date"
+    },
+    "pages": {
+      "mode": {
+        "eq": "Equal",
+        "gt": "Greater",
+        "lt": "Less",
+        "range": "Range"
+      },
+      "input": {
+        "primary": "Pages",
+        "secondary": "To"
+      }
+    },
+    "language": {
+      "all": "All languages",
+      "english": "English",
+      "japanese": "Japanese",
+      "chinese": "Chinese",
+      "translated": "Translated",
+      "other": "Other / unknown"
+    },
     "sort": {
       "latest": "New",
       "popular": "Hot",
@@ -129,7 +155,7 @@
     },
     "dateRange": "Date filter",
     "date": {
-      "1h": "1 hour",
+      "2h": "2 hours",
       "24h": "24 hours",
       "3d": "3 days",
       "7d": "Week",
@@ -166,7 +192,10 @@
   },
   "historyNotFound": "History is empty ¯\\_(ツ)_/¯",
   "lobby": {
-    "peersTitle": "Your devices",
+    "cloudTitle": "Cloud",
+    "cloudStatusConnecting": "Connecting to cloud…",
+    "cloudStatusReconnecting": "Reconnecting to cloud… Changes stay on this device until sync is back.",
+    "cloudStatusLocalOnly": "Cloud unreachable. Working locally on this device; sync resumes when the server is back.",
     "noPeers": "No connected devices"
   },
   "profile": {
@@ -320,7 +349,17 @@
     "results": "Results",
     "placeholder": "Search by title or tag",
     "recent": "Recent searches",
-    "clearHistory": "Clear history"
+    "clearHistory": "Clear history",
+    "searchByImage": "Search by image",
+    "imageSearchBusy": "Searching by image…",
+    "imageSearchNoMatches": "No nhentai matches for this image.",
+    "imageSearchOpenedBest": "Found {count} matches — opened the best one.",
+    "imageSearchResultsTitle": "Image search",
+    "imageSearchSimilarity": "Match",
+    "imageSearchNoPayload": "No image selected. Open search and pick a picture again.",
+    "imageSearchRetry": "Retry",
+    "imageSearchGoBack": "Back",
+    "imageSearchPickOther": "Pick another image"
   },
   "searchBar": {
     "backHome": "Back to home",

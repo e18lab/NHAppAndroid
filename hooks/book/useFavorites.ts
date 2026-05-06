@@ -1,25 +1,46 @@
-import { requestStoragePush } from "@/api/nhappApi/cloudStorage";
+import {
+  requestStoragePush,
+  subscribeToStorageApplied,
+} from "@/api/nhappApi/cloudStorage";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useCallback, useEffect, useState } from "react";
 const FAVORITES = "bookFavorites";
+
+function parseFavoritesSet(raw: string | null): Set<number> {
+  try {
+    const arr: number[] = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch {
+    return new Set();
+  }
+}
+
 export const useFavorites = (currentId: number) => {
   const [favorites, setFav] = useState<Set<number>>(new Set());
   const [liked, setLiked] = useState(false);
-  useEffect(() => {
+  const reload = useCallback(() => {
     AsyncStorage.getItem(FAVORITES).then((j) => {
-      const arr: number[] = j ? JSON.parse(j) : [];
-      setFav(new Set(arr));
-      setLiked(arr.includes(currentId));
+      const s = parseFavoritesSet(j);
+      setFav(s);
+      setLiked(s.has(currentId));
     });
   }, [currentId]);
-  const toggleFav = useCallback((bid: number, next: boolean) => {
-    setFav((prev) => {
-      const cp = new Set(prev);
-      next ? cp.add(bid) : cp.delete(bid);
-      AsyncStorage.setItem(FAVORITES, JSON.stringify([...cp]));
-      if (bid === currentId) setLiked(next);
-      return cp;
-    });
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  useEffect(() => subscribeToStorageApplied(reload), [reload]);
+  const toggleFav = useCallback(async (bid: number, next: boolean) => {
+    const j = await AsyncStorage.getItem(FAVORITES);
+    const s = parseFavoritesSet(j);
+    if (next) s.add(bid);
+    else s.delete(bid);
+    const nextArr = [...s];
+    await AsyncStorage.setItem(FAVORITES, JSON.stringify(nextArr));
+    setFav(s);
+    if (bid === currentId) setLiked(next);
+    requestStoragePush();
   }, [currentId]);
   const toggleLike = useCallback(async () => {
     const j = await AsyncStorage.getItem(FAVORITES);

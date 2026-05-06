@@ -31,6 +31,7 @@ import DownloadProgressBanner from "@/components/DownloadProgressBanner";
 import { getGridConfigMap } from "@/config/gridConfig";
 import AutoImportProvider from "@/context/AutoImportProvider";
 import { DateRangeProvider } from "@/context/DateRangeContext";
+import { PageFilterProvider } from "@/context/PageFilterContext";
 import { SearchContentProvider } from "@/context/SearchContentContext";
 import { SortProvider } from "@/context/SortContext";
 import { TagProvider } from "@/context/TagFilterContext";
@@ -433,13 +434,15 @@ export default function RootLayout() {
             <I18nProvider>
               <DateRangeProvider>
                 <SortProvider>
-                  <TagProvider>
-                    <TagLibraryProvider>
-                      <CloudStorageSync />
-                      <OnlineFavoritesStartupSync />
-                      <AppShell />
-                    </TagLibraryProvider>
-                  </TagProvider>
+                  <PageFilterProvider>
+                    <TagProvider>
+                      <TagLibraryProvider>
+                        <CloudStorageSync />
+                        <OnlineFavoritesStartupSync />
+                        <AppShell />
+                      </TagLibraryProvider>
+                    </TagProvider>
+                  </PageFilterProvider>
                 </SortProvider>
               </DateRangeProvider>
             </I18nProvider>

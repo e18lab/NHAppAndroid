@@ -3,6 +3,7 @@
  * Работает поверх AsyncStorage: ключи, не начинающиеся с @auth, синхронизируются.
  */
 import { API_BASE_URL } from "@/config/api";
+import { mergeValueForKey } from "@/api/nhappApi/storageMerge";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const STORAGE_PREFIX_EXCLUDE = "@auth"; // Не синхронизируем токены и т.п.
@@ -80,11 +81,39 @@ export async function collectLocalStorageForSync(): Promise<Record<string, strin
   return out;
 }
 
-/** Применить облачное хранилище к AsyncStorage (не перезаписываем @auth). */
+const MERGE_KEYS = new Set([
+  "bookFavorites",
+  "readHistory",
+  "searchHistory",
+  "bookFavoritesOnline.v1",
+]);
+
+/** Применить облачное хранилище к AsyncStorage (merge для избранного/истории; не трогаем @auth). */
 export async function applyStorageToLocal(storage: Record<string, unknown>): Promise<void> {
-  const toSet = Object.entries(storage)
-    .filter(([k]) => !k.startsWith(STORAGE_PREFIX_EXCLUDE) && !STORAGE_KEYS_EXCLUDE.has(k))
-    .map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)] as [string, string]);
+  const remoteKeys = Object.keys(storage).filter(
+    (k) => !k.startsWith(STORAGE_PREFIX_EXCLUDE) && !STORAGE_KEYS_EXCLUDE.has(k)
+  );
+  const readKeys = [...new Set([...remoteKeys, ...MERGE_KEYS])].filter(
+    (k) => !k.startsWith(STORAGE_PREFIX_EXCLUDE) && !STORAGE_KEYS_EXCLUDE.has(k)
+  );
+  const pairs = readKeys.length ? await AsyncStorage.multiGet(readKeys) : [];
+  const local = new Map(pairs);
+
+  const toSet: [string, string][] = [];
+  for (const k of remoteKeys) {
+    const v = storage[k];
+    const localStr = local.get(k) ?? null;
+    if (MERGE_KEYS.has(k)) {
+      toSet.push([k, mergeValueForKey(k, localStr, v)]);
+    } else {
+      toSet.push([k, typeof v === "string" ? v : JSON.stringify(v)]);
+    }
+  }
+  for (const k of MERGE_KEYS) {
+    if (remoteKeys.includes(k)) continue;
+    const loc = local.get(k);
+    if (loc != null && loc !== "") toSet.push([k, loc]);
+  }
   if (toSet.length === 0) return;
   await AsyncStorage.multiSet(toSet);
 }

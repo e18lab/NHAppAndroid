@@ -1755,6 +1755,21 @@ ipcMain.handle('electron:downloadFile', async (event, url, filePath) => {
   }
 });
 
+/** Referer/Origin must match the request URL host or Chromium cancels (invalid referrer → ERR_BLOCKED_BY_CLIENT). */
+function refererOriginForRequestUrl(requestUrl) {
+  try {
+    const u = new URL(requestUrl);
+    const host = u.hostname;
+    if (host === 'nhentai.net' || host.endsWith('.nhentai.net')) {
+      return { Referer: 'https://nhentai.net/', Origin: 'https://nhentai.net' };
+    }
+    const origin = `${u.protocol}//${u.host}`;
+    return { Referer: `${origin}/`, Origin: origin };
+  } catch {
+    return { Referer: 'https://nhentai.net/', Origin: 'https://nhentai.net' };
+  }
+}
+
 // Fetch JSON/API requests with Electron session cookies (bypasses CORS and proxy issues)
 ipcMain.handle('electron:fetchJson', async (event, url, options) => {
   try {
@@ -1785,14 +1800,14 @@ ipcMain.handle('electron:fetchJson', async (event, url, options) => {
         cleanHeaders[key] = String(value);
       }
     });
-    // Формируем финальные заголовки: сначала дефолтные, потом пользовательские (чтобы пользовательские перезаписывали дефолтные)
+    const refOr = refererOriginForRequestUrl(url);
     const finalHeaders = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-      'Referer': 'https://nhentai.net/',
+      Referer: refOr.Referer,
       'Accept': 'application/json, text/plain, */*',
       'Accept-Language': 'en-US,en;q=0.9',
-      'Origin': 'https://nhentai.net',
-      ...cleanHeaders, 
+      Origin: refOr.Origin,
+      ...cleanHeaders,
     };
     console.log(`[fetchJson] ${method} ${url}`);
     console.log(`[fetchJson] Headers:`, JSON.stringify(finalHeaders, null, 2));

@@ -23,6 +23,10 @@ type ModeMap = Record<string, TagMode>;
 interface Ctx {
   filters: FilterItem[];
   cycle: (t: { type: string; name: string; id?: string | number }) => void;
+  setMode: (
+    t: { type: string; name: string; id?: string | number },
+    mode: TagMode | null
+  ) => void;
   clear: () => void;
   includes: FilterItem[];
   excludes: FilterItem[];
@@ -34,6 +38,7 @@ interface Ctx {
 const TagCtx = createContext<Ctx>({
   filters: [],
   cycle: () => {},
+  setMode: () => {},
   clear: () => {},
   includes: [],
   excludes: [],
@@ -67,12 +72,17 @@ export function TagProvider({ children }: { children: React.ReactNode }) {
   const load = useCallback(() => {
     AsyncStorage.getItem(KEY)
       .then((j) => {
-        if (!j) return;
+        if (!j) {
+          setFilters((prev) => (prev.length === 0 ? prev : []));
+          setModeMap((prev) => (Object.keys(prev).length === 0 ? prev : {}));
+          return;
+        }
         const arr = JSON.parse(j) as FilterItem[];
-        setFilters(arr);
+        const serialized = JSON.stringify(arr);
+        setFilters((prev) => (JSON.stringify(prev) === serialized ? prev : arr));
         const mm: ModeMap = {};
         for (const f of arr) mm[keyOf(f)] = f.mode;
-        setModeMap(mm);
+        setModeMap((prev) => (JSON.stringify(prev) === JSON.stringify(mm) ? prev : mm));
       })
       .finally(() => setFiltersReady(true));
   }, []);
@@ -124,6 +134,35 @@ export function TagProvider({ children }: { children: React.ReactNode }) {
       return cp;
     });
   }, []);
+  const setMode = useCallback(
+    (t: { type: string; name: string; id?: string | number }, mode: TagMode | null) => {
+      const k = keyOf(t);
+      setEpoch((e) => e + 1);
+      setLastChangedKey(`${k}:${Date.now()}`);
+      setFilters((prev) => {
+        const idx = prev.findIndex((x) => x.type === t.type && x.name === t.name);
+        if (mode == null) {
+          if (idx === -1) return prev;
+          const cp = prev.slice();
+          cp.splice(idx, 1);
+          return cp;
+        }
+        if (idx === -1) return [...prev, { ...t, mode }];
+        const cur = prev[idx];
+        if (cur.mode === mode && cur.id === t.id) return prev;
+        const cp = prev.slice();
+        cp[idx] = { ...cur, ...t, mode };
+        return cp;
+      });
+      setModeMap((m) => {
+        const n = { ...m };
+        if (mode == null) delete n[k];
+        else n[k] = mode;
+        return n;
+      });
+    },
+    []
+  );
   const clear = useCallback(() => {
     setFilters([]);
     setModeMap({});
@@ -135,6 +174,7 @@ export function TagProvider({ children }: { children: React.ReactNode }) {
       value={{
         filters,
         cycle,
+        setMode,
         clear,
         includes,
         excludes,

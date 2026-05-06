@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { useGlobalSearchParams, usePathname, useRouter } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
     Animated,
     Easing,
@@ -9,15 +9,19 @@ import {
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     View,
 } from "react-native";
 
 import {
+    getLobbyConnectionSnap,
     getLobbyRole,
+    subscribeToLobbyCloudStats,
     subscribeToLobbyPeersCount,
     subscribeToLobbyPeersDevices,
     subscribeToLobbyRole,
     type LobbyPeerDevice,
+    type LobbyConnectionUi,
 } from "@/api/nhappApi/lobbyStorage";
 import { CalendarRangePicker } from "@/components/CalendarRangePicker";
 import { useDrawer } from "@/components/DrawerContext";
@@ -25,15 +29,149 @@ import NhModal from "@/components/nhModal";
 import type { SelectItem } from "@/components/uikit/FilterDropdown";
 import { FilterDropdown } from "@/components/uikit/FilterDropdown";
 import { useDateRange } from "@/context/DateRangeContext";
+import { usePageFilter } from "@/context/PageFilterContext";
 import { SortKey, useSort } from "@/context/SortContext";
+import { useFilterTags } from "@/context/TagFilterContext";
 import { useOnlineMe } from "@/hooks/useOnlineMe";
 import { useTheme } from "@/lib/ThemeContext";
 import { useI18n } from "@/lib/i18n/I18nContext";
-import { getDeviceId } from "@/utils/deviceId";
 import { useTopBarAction } from "@/context/TopBarActionContext";
+import { getDeviceId } from "@/utils/deviceId";
 
 const BAR_HEIGHT = 52;
 const BTN_SIDE = 40;
+const LANGUAGE_FILTER_KEYS = ["english", "japanese", "chinese", "translated"] as const;
+const LANGUAGE_OPTIONS = ["english", "japanese", "chinese"] as const;
+type LanguageOption = (typeof LANGUAGE_OPTIONS)[number];
+type PagesMode = "eq" | "gt" | "lt" | "range";
+
+function PagesFilterEditor({
+  colors,
+  t,
+  initialQuery,
+  onApply,
+  onClear,
+}: {
+  colors: ReturnType<typeof useTheme>["colors"];
+  t: (k: string) => string;
+  initialQuery: string;
+  onApply: (query: string) => void;
+  onClear: () => void;
+}) {
+  const [mode, setMode] = useState<PagesMode>("eq");
+  const [v1, setV1] = useState("");
+  const [v2, setV2] = useState("");
+
+  useEffect(() => {
+    const q = initialQuery.trim();
+    const range = q.match(/^pages:>=?(\d+)\s+pages:<=?(\d+)$/i);
+    if (range) {
+      setMode("range");
+      setV1(range[1] ?? "");
+      setV2(range[2] ?? "");
+      return;
+    }
+    const gt = q.match(/^pages:>(\d+)$/i);
+    if (gt) {
+      setMode("gt");
+      setV1(gt[1] ?? "");
+      setV2("");
+      return;
+    }
+    const lt = q.match(/^pages:<(\d+)$/i);
+    if (lt) {
+      setMode("lt");
+      setV1(lt[1] ?? "");
+      setV2("");
+      return;
+    }
+    const eq = q.match(/^pages:(\d+)$/i);
+    if (eq) {
+      setMode("eq");
+      setV1(eq[1] ?? "");
+      setV2("");
+    }
+  }, [initialQuery]);
+
+  const toInt = (s: string) => {
+    const n = Number(s);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  };
+
+  return (
+    <View style={styles.pagesWrap}>
+      <View style={styles.pagesModeRow}>
+        {([
+          ["eq", "="],
+          ["gt", ">"],
+          ["lt", "<"],
+          ["range", "↔"],
+        ] as [PagesMode, string][]).map(([k, lbl]) => (
+          <Pressable
+            key={k}
+            onPress={() => setMode(k)}
+            style={[
+              styles.pagesModeBtn,
+              {
+                borderColor: mode === k ? colors.accent : colors.page + "88",
+              },
+            ]}
+          >
+            <Text style={{ color: mode === k ? colors.accent : colors.sub, fontSize: 12, fontWeight: "700" }}>
+              {lbl}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+      <View style={styles.pagesInputRow}>
+        <TextInput
+          value={v1}
+          onChangeText={(x) => setV1(x.replace(/[^\d]/g, ""))}
+          keyboardType="numeric"
+          placeholder={t("explore.pages.input.primary") || "Pages"}
+          placeholderTextColor={colors.sub}
+          style={[styles.pagesInput, { color: colors.txt, borderColor: colors.page }]}
+        />
+        {mode === "range" ? (
+          <TextInput
+            value={v2}
+            onChangeText={(x) => setV2(x.replace(/[^\d]/g, ""))}
+            keyboardType="numeric"
+            placeholder={t("explore.pages.input.secondary") || "To"}
+            placeholderTextColor={colors.sub}
+            style={[styles.pagesInput, { color: colors.txt, borderColor: colors.page }]}
+          />
+        ) : null}
+      </View>
+      <View style={styles.pagesActionRow}>
+        <Pressable onPress={onClear}>
+          <Text style={{ color: colors.sub, fontSize: 12, fontWeight: "700" }}>
+            {t("common.reset")}
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => {
+            const a = toInt(v1);
+            const b = toInt(v2);
+            let next = "";
+            if (mode === "eq" && a > 0) next = `pages:${a}`;
+            if (mode === "gt" && a > 0) next = `pages:>${a}`;
+            if (mode === "lt" && a > 0) next = `pages:<${a}`;
+            if (mode === "range" && a > 0 && b > 0) {
+              const lo = Math.min(a, b);
+              const hi = Math.max(a, b);
+              next = `pages:>=${lo} pages:<=${hi}`;
+            }
+            if (next) onApply(next);
+          }}
+          style={[styles.pagesApplyBtn, { borderColor: colors.accent }]}
+        >
+          <Text style={{ color: colors.accent, fontSize: 12, fontWeight: "800" }}>{t("common.apply")}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
 
 function hasSeg(pathname: string | null | undefined, seg: string) {
   const p = pathname ?? "";
@@ -73,6 +211,8 @@ export function SearchBar() {
   const { colors } = useTheme();
   const { openDrawer } = useDrawer();
   const { sort, setSort } = useSort();
+  const { filters, setMode } = useFilterTags() as any;
+  const { pagesQuery, setPagesQuery, clearPagesQuery } = usePageFilter();
   const router = useRouter();
   const pathname = usePathname();
   const { action } = useTopBarAction();
@@ -103,7 +243,6 @@ export function SearchBar() {
   useEffect(() => {
     getDeviceId().then(setCurrentDeviceId).catch(() => {});
   }, []);
-
   useEffect(() => {
     const unsub = subscribeToLobbyRole(() => setLobbyRole(getLobbyRole()));
     return unsub;
@@ -142,8 +281,11 @@ export function SearchBar() {
     id?: string | string[];
     title?: string | string[];
     slug?: string | string[];
+    imsearch?: string | string[];
   }>();
   const q = typeof params.query === "string" ? params.query : "";
+  const rawImsearch = Array.isArray(params.imsearch) ? params.imsearch[0] : params.imsearch;
+  const imsearchActive = rawImsearch === "1" || rawImsearch === "true";
   const rawId = Array.isArray(params.id) ? params.id[0] : params.id;
   const bookId = typeof rawId === "string" ? rawId : undefined;
   const rawTitle = Array.isArray(params.title) ? params.title[0] : params.title;
@@ -156,13 +298,16 @@ export function SearchBar() {
     pathname: string | null | undefined,
     q: string,
     bookTitle?: string,
-    bookId?: string
+    bookId?: string,
+    imsearch?: boolean
   ) {
     const p = pathname ?? "";
     const has = (seg: string) => new RegExp(`(^|/)${seg}(\\/|$)`).test(p);
     if (p === "/" || has("index")) return t("menu.home");
-    if (has("explore"))
+    if (has("explore")) {
+      if (imsearch) return t("search.imageSearchResultsTitle");
       return q ? t("search.results") + ": " + q : t("menu.explore");
+    }
     if (has("favorites")) return t("menu.favorites");
     if (has("favoritesOnline")) return t("menu.favoritesOnline");
     if (has("downloaded")) return t("menu.downloaded");
@@ -183,8 +328,8 @@ export function SearchBar() {
   const rotationAnim = useRef(new Animated.Value(0)).current;
 
   const title = useMemo(
-    () => getTitle(pathname, q, bookTitle, bookId),
-    [pathname, q, bookTitle, bookId]
+    () => getTitle(pathname, q, bookTitle, bookId, imsearchActive),
+    [pathname, q, bookTitle, bookId, imsearchActive, t]
   );
   const showBack = pathname && pathname !== "/" && pathname !== "/index";
 
@@ -218,14 +363,14 @@ export function SearchBar() {
 
   /** "Within last X" — use uploaded:<X so API returns only recent content */
   const DATE_PRESETS: { value: string; label: string }[] = [
-    { value: "<1h", label: t("explore.date.1h") || "1 час" },
-    { value: "<24h", label: t("explore.date.24h") || "24 часа" },
-    { value: "<3d", label: t("explore.date.3d") || "3 дня" },
-    { value: "<7d", label: t("explore.date.7d") || "Неделя" },
-    { value: "<30d", label: t("explore.date.30d") || "Месяц" },
-    { value: "<90d", label: t("explore.date.90d") || "3 месяца" },
-    { value: "<180d", label: t("explore.date.180d") || "6 месяцев" },
-    { value: "<365d", label: t("explore.date.1y") || "Год" },
+    { value: "uploaded:<2h", label: t("explore.date.2h") || "2 часа" },
+    { value: "uploaded:<24h", label: t("explore.date.24h") || "24 часа" },
+    { value: "uploaded:<3d", label: t("explore.date.3d") || "3 дня" },
+    { value: "uploaded:<7d", label: t("explore.date.7d") || "Неделя" },
+    { value: "uploaded:<30d", label: t("explore.date.30d") || "Месяц" },
+    { value: "uploaded:<90d", label: t("explore.date.90d") || "3 месяца" },
+    { value: "uploaded:<180d", label: t("explore.date.180d") || "6 месяцев" },
+    { value: "uploaded:<365d", label: t("explore.date.1y") || "Год" },
   ];
 
   const dayMs = 24 * 60 * 60 * 1000;
@@ -274,47 +419,213 @@ export function SearchBar() {
     ...DATE_PRESETS.map(({ value: v, label }) => ({
       value: v,
       label,
+      indicatorShape: "square" as const,
     })),
   ];
 
   const uploadedLabel =
-    DATE_PRESETS.find((p) => p.value === uploaded)?.label ??
+    DATE_PRESETS.find((p) => p.value === uploaded || p.value.replace("uploaded:", "") === uploaded)?.label ??
     (uploaded && uploaded.startsWith("uploaded:")
       ? (customRangeLabel || (t("explore.dateRangeCustom") || "Диапазон дат"))
       : null);
+  const activeLanguage = useMemo(() => {
+    const include = LANGUAGE_OPTIONS.find((name) =>
+      (filters as any[]).some(
+        (f) => f?.type === "language" && f?.name === name && f?.mode === "include"
+      )
+    );
+    return include ?? null;
+  }, [filters]);
+  const activeLanguageLabel = useMemo(() => {
+    if (!activeLanguage) return t("explore.language.all") || "Все языки";
+    if (activeLanguage === "english") return t("explore.language.english") || "English";
+    if (activeLanguage === "japanese") return t("explore.language.japanese") || "Japanese";
+    if (activeLanguage === "chinese") return t("explore.language.chinese") || "Chinese";
+    return t("explore.language.all") || "Все языки";
+  }, [activeLanguage, t]);
+
+  const applyLanguageFilter = useCallback(
+    (next: LanguageOption | "all") => {
+      for (const name of LANGUAGE_FILTER_KEYS) {
+        setMode({ type: "language", name }, null);
+      }
+      if (next !== "all") {
+        setMode({ type: "language", name: next }, "include");
+      }
+    },
+    [setMode]
+  );
+
+  const lobbyConnSnap = useSyncExternalStore(
+    subscribeToLobbyCloudStats,
+    getLobbyConnectionSnap,
+    () => JSON.stringify(["pending", "first", null] as const)
+  );
+  const lobbyConn = useMemo((): LobbyConnectionUi => {
+    try {
+      const [status, phase, pingMs] = JSON.parse(lobbyConnSnap) as [
+        LobbyConnectionUi["status"],
+        LobbyConnectionUi["phase"],
+        number | null,
+      ];
+      return {
+        status,
+        phase,
+        pingMs: typeof pingMs === "number" && Number.isFinite(pingMs) ? pingMs : null,
+      };
+    } catch {
+      return { status: "pending", phase: "first", pingMs: null };
+    }
+  }, [lobbyConnSnap]);
+  const lobbyCloudHeaderNode = useMemo(
+    () => (
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+        <Feather name="cloud" size={18} color={colors.accent} />
+        <Text
+          style={{
+            fontSize: 12,
+            fontWeight: "800",
+            color: colors.txt,
+            letterSpacing: 1.1,
+            textTransform: "uppercase",
+          }}
+        >
+          {t("lobby.cloudTitle")}
+        </Text>
+      </View>
+    ),
+    [colors.accent, colors.txt, t]
+  );
+
+  const lobbyCloudPingNode = useMemo(() => {
+    const online = lobbyConn.status === "online";
+    const msRounded =
+      online && lobbyConn.pingMs != null ? Math.max(0, Math.round(lobbyConn.pingMs)) : null;
+    let dotColor = colors.sub;
+    let line1: string;
+    if (online && msRounded != null) {
+      dotColor =
+        msRounded < 120 ? "#22c55e" : msRounded < 350 ? "#eab308" : "#ef4444";
+      line1 = `${msRounded} ms`;
+    } else if (online) {
+      line1 = "—";
+    } else if (lobbyConn.status === "pending") {
+      dotColor = "#eab308";
+      line1 = "—";
+    } else {
+      dotColor = "#fb923c";
+      line1 = "—";
+    }
+    const hint =
+      lobbyConn.status === "pending"
+        ? lobbyConn.phase === "retry"
+          ? t("lobby.cloudStatusReconnecting")
+          : t("lobby.cloudStatusConnecting")
+        : lobbyConn.status === "offline_local"
+          ? t("lobby.cloudStatusLocalOnly")
+          : null;
+    return (
+      <View
+        style={{
+          paddingVertical: 8,
+          paddingHorizontal: 12,
+          borderRadius: 10,
+          backgroundColor: colors.page + "44",
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: colors.sub + "44",
+        }}
+      >
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: dotColor }} />
+          <Text style={{ fontSize: 14, fontWeight: "700", color: colors.txt }}>{line1}</Text>
+        </View>
+        {hint ? (
+          <Text
+            style={{
+              marginTop: 6,
+              fontSize: 12,
+              fontWeight: "600",
+              color: colors.sub,
+              lineHeight: 16,
+            }}
+            numberOfLines={3}
+          >
+            {hint}
+          </Text>
+        ) : null}
+      </View>
+    );
+  }, [lobbyConn, colors.sub, colors.txt, colors.page, t]);
 
   const lobbyDevicesDropdownItems: SelectItem[] = useMemo(
     () => [
-      { type: "group" as const, label: t("lobby.peersTitle") || "Устройства в лобби" },
+      {
+        type: "group" as const,
+        label: t("lobby.cloudTitle"),
+        labelNode: lobbyCloudHeaderNode,
+        subtitle: lobbyCloudPingNode,
+      },
       ...(lobbyPeersDevices.length === 0
         ? [{ value: "_empty", label: t("lobby.noPeers") || "Нет подключённых устройств" }]
         : lobbyPeersDevices.map((d) => {
-            const isThisDevice = d.device_id === currentDeviceId;
-            const roleIcon =
-              isThisDevice && lobbyRole
-                ? lobbyRole === "sender"
-                  ? (c: string) => <Feather name="arrow-up" size={18} color={c} />
-                  : (c: string) => <Feather name="arrow-down" size={18} color={c} />
-                : () => <View style={{ width: 18, height: 18 }} />;
+            const isThis = d.device_id === currentDeviceId;
+            const role =
+              isThis && lobbyRole === "sender"
+                ? (c: string) => <Feather name="arrow-up-circle" size={20} color={c} />
+                : isThis && lobbyRole === "receiver"
+                  ? (c: string) => <Feather name="arrow-down-circle" size={20} color={c} />
+                  : undefined;
             return {
               value: d.device_id,
               label: d.device_name || d.device_id || "—",
               icon: (c: string) => <Feather name="smartphone" size={18} color={c} />,
-              trailingIcon: roleIcon,
+              ...(role ? { trailingIcon: role } : {}),
             };
           })),
     ],
-    [lobbyPeersDevices, currentDeviceId, lobbyRole, t]
+    [lobbyPeersDevices, currentDeviceId, lobbyRole, t, lobbyCloudHeaderNode, lobbyCloudPingNode]
   );
 
   const sortSelectItems: SelectItem[] = [
-    ...PRESETS.map(({ key, label, icon }) => ({
-      value: key,
-      label,
-      icon: icon
-        ? (c: string) => <Feather name={icon as any} size={15} color={c} />
-        : undefined,
-    })),
+    {
+      type: "submenu" as const,
+      label: `${t("explore.filter.language") || "Выбор языка"}: ${activeLanguageLabel}`,
+      icon: (c: string) => <Feather name="globe" size={15} color={c} />,
+      children: [
+        { value: "lang:all", label: t("explore.language.all") || "Все языки" },
+        { value: "lang:english", label: t("explore.language.english") || "English" },
+        { value: "lang:japanese", label: t("explore.language.japanese") || "Japanese" },
+        { value: "lang:chinese", label: t("explore.language.chinese") || "Chinese" },
+      ],
+    },
+    {
+      type: "submenu" as const,
+      label: pagesQuery ? `${t("explore.filter.pages") || "Страницы"}: ${pagesQuery}` : (t("explore.filter.pages") || "Страницы"),
+      icon: (c: string) => <Feather name="file-text" size={15} color={c} />,
+      children: [
+        {
+          type: "custom" as const,
+          label: t("explore.filter.pages") || "Страницы",
+          backLabel: t("explore.date.back") || "Назад",
+          preferredHeight: 178,
+          content: ({ onClose }) => (
+            <PagesFilterEditor
+              colors={colors}
+              t={t}
+              initialQuery={pagesQuery}
+              onApply={(query) => {
+                setPagesQuery(query);
+                onClose();
+              }}
+              onClear={() => {
+                clearPagesQuery();
+                onClose();
+              }}
+            />
+          ),
+        },
+      ],
+    },
     {
       type: "submenu" as const,
       label: hasDateFilter && uploadedLabel ? uploadedLabel : (t("explore.dateRange") || "Фильтр по дате"),
@@ -322,6 +633,17 @@ export function SearchBar() {
       icon: (c: string) => <Feather name="calendar" size={15} color={c} />,
       children: dateSubmenuItems,
     },
+    {
+      type: "group" as const,
+      label: t("explore.filter.sortTitle") || "Сортировать",
+    },
+    ...PRESETS.map(({ key, label, icon }) => ({
+      value: `sort:${key}`,
+      label,
+      icon: icon
+        ? (c: string) => <Feather name={icon as any} size={15} color={c} />
+        : undefined,
+    })),
   ];
 
 
@@ -445,34 +767,19 @@ export function SearchBar() {
                     value={undefined}
                     options={lobbyDevicesDropdownItems}
                     keepOpen
+                    hideRadio
                     trigger={({ onPress }) => (
                       <Pressable
                         onPress={onPress}
                         style={({ pressed }) => [styles.lobbyBadgeWrap, pressed && { opacity: 0.8 }]}
                       >
-                        <Feather name="users" size={18} color={colors.searchTxt} />
+                        <Feather name="cloud" size={18} color={colors.searchTxt} />
                         {lobbyPeersCount > 0 && (
                           <View style={[styles.lobbyBadge, { backgroundColor: colors.accent }]}>
                             <Text style={styles.lobbyBadgeText} numberOfLines={1}>
                               {lobbyPeersCount > 99 ? "99+" : lobbyPeersCount}
                             </Text>
                           </View>
-                        )}
-                        {lobbyRole === "sender" && (
-                          <Feather
-                            name="arrow-up"
-                            size={12}
-                            color={colors.accent}
-                            style={styles.lobbyRoleIcon}
-                          />
-                        )}
-                        {lobbyRole === "receiver" && (
-                          <Feather
-                            name="arrow-down"
-                            size={12}
-                            color={colors.accent}
-                            style={styles.lobbyRoleIcon}
-                          />
                         )}
                       </Pressable>
                     )}
@@ -515,9 +822,18 @@ export function SearchBar() {
 
                 {!hideSearchFilter && (
                   <FilterDropdown
-                    value={uploaded ?? sort}
-                    secondaryValue={uploaded ? sort : undefined}
+                    value={activeLanguage ? `lang:${activeLanguage}` : "lang:all"}
+                    secondaryValue={uploaded ? uploaded : `sort:${sort}`}
                     onChange={(val) => {
+                      if (val.startsWith("lang:")) {
+                        const next = val.slice(5) as LanguageOption | "all";
+                        applyLanguageFilter(next);
+                        return;
+                      }
+                      if (val.startsWith("sort:")) {
+                        setSort(val.slice(5) as SortKey);
+                        return;
+                      }
                       const isDatePreset = DATE_PRESETS.some((p) => p.value === val);
                       if (isDatePreset) {
                         setUploaded(val === uploaded ? null : val);
@@ -526,6 +842,7 @@ export function SearchBar() {
                       }
                     }}
                     options={sortSelectItems}
+                    maxDropdownHeight={560}
                     keepOpen
                     trigger={({ onPress }) => (
                       <IconBtn onPress={onPress}>
@@ -650,11 +967,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700",
   },
-  lobbyRoleIcon: {
-    position: "absolute",
-    bottom: 0,
-    alignSelf: "center",
-  },
 
   sheetScroll: {},
   sortRow: {
@@ -666,6 +978,45 @@ const styles = StyleSheet.create({
     marginVertical: 2,
   },
   sortTxt: { fontSize: 15 },
+  pagesWrap: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  pagesModeRow: {
+    flexDirection: "row",
+    gap: 6,
+    flexWrap: "wrap",
+  },
+  pagesModeBtn: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  pagesInputRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  pagesInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    fontSize: 13,
+  },
+  pagesActionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  pagesApplyBtn: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
 
 });
 

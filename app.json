@@ -8,7 +8,12 @@
     "scheme": "nhappandroid",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
+      }
     },
     "androidNavigationBar": {
       "barStyle": "light-content",
@@ -29,6 +34,14 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
       "expo-router",
       [
         "expo-splash-screen",
@@ -46,7 +59,12 @@
         }
       ],
       "expo-video",
-      "expo-background-task"
+      "expo-background-task",
+      "expo-font",
+      "expo-image",
+      "expo-localization",
+      "expo-sharing",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true

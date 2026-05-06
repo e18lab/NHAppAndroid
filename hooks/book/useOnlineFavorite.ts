@@ -1,5 +1,9 @@
 import { addFavorite, isFavorited, removeFavorite } from "@/api/v2";
 import { getAuthStorageReady } from "@/api/v2/client";
+import {
+  addOnlineFavoriteIds,
+  removeOnlineFavoriteIds,
+} from "@/lib/onlineFavoritesStorage";
 import { useCallback, useEffect, useState } from "react";
 
 function coerceIsFavorited(payload: unknown): boolean | null {
@@ -63,8 +67,10 @@ export const useOnlineFavorite = (
       await getAuthStorageReady();
       if (wasLiked) {
         await removeFavorite(galleryId);
+        await removeOnlineFavoriteIds([galleryId]);
       } else {
         await addFavorite(galleryId);
+        await addOnlineFavoriteIds([galleryId]);
       }
     } catch {
       setOnlineLiked(wasLiked); // rollback

@@ -1,10 +1,9 @@
 import { getMe, hasSession } from "@/api/v2";
 import type { Me } from "@/api/v2";
 import { getAuthStorageReady } from "@/api/v2/client";
+import { API_BASE_URL } from "@/config/api";
 import { getDeviceId, getDeviceName } from "@/utils/deviceId";
 import { useEffect, useSyncExternalStore } from "react";
-
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
 let meSnapshot: Me | null = null;
 const listeners = new Set<() => void>();

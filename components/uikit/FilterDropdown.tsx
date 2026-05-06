@@ -1,11 +1,11 @@
 import { useTheme } from "@/lib/ThemeContext";
 import { Feather } from "@expo/vector-icons";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { DimensionValue, StyleProp, ViewStyle } from "react-native";
 import {
   Animated,
   Dimensions,
-  LayoutAnimation,
+  Easing,
   Modal,
   Platform,
   Pressable,
@@ -21,6 +21,7 @@ export type SelectOption = {
   value: string;
   label: string;
   icon?: React.ReactNode | ((color: string) => React.ReactNode);
+  indicatorShape?: "circle" | "square";
   /** Справа вместо кружка (например стрелка отправитель/получатель). */
   trailingIcon?: React.ReactNode | ((color: string) => React.ReactNode);
 };
@@ -35,6 +36,9 @@ export type SelectAction = {
 export type SelectGroupLabel = {
   type: "group";
   label: string;
+  /** If set, rendered instead of the uppercase `label` text (keep `label` for width / fallback). */
+  labelNode?: React.ReactNode;
+  subtitle?: string | React.ReactNode;
 };
 
 export type SelectSubmenu = {
@@ -50,6 +54,8 @@ export type SelectCustom = {
   type: "custom";
   label: string;
   backLabel?: string;
+  /** Preferred dropdown content height for this custom view. */
+  preferredHeight?: number;
   /** Receives onClose and openSubmenu (push a list submenu, returns selected value or null). */
   content: (props: {
     onClose: () => void;
@@ -87,6 +93,8 @@ export type FilterDropdownProps = {
   maxWidth?: DimensionValue;
   maxDropdownHeight?: number;
   keepOpen?: boolean;
+  /** Скрыть колонку «радио» у опций (списки только для просмотра). */
+  hideRadio?: boolean;
   trigger?: (props: { open: boolean; onPress: () => void }) => React.ReactNode;
   /** Описание под триггером (мелкий текст) */
   description?: string;
@@ -112,7 +120,7 @@ const CALENDAR_CONTENT_H =
 const RADIO_SIZE = 18;
 const RADIO_DOT = 8;
 const SCREEN_MARGIN = 12;
-const ANIM_MS = 100;
+const ANIM_MS = 180;
 
 function findLabelByValue(items: SelectItem[], value: string | undefined): string | undefined {
   if (!value) return undefined;
@@ -144,6 +152,7 @@ export function FilterDropdown({
   maxWidth,
   maxDropdownHeight = 300,
   keepOpen = false,
+  hideRadio = false,
   trigger: customTrigger,
   description,
   style,
@@ -152,6 +161,12 @@ export function FilterDropdown({
   const triggerRef = useRef<View>(null);
   const [open, setOpen] = useState(false);
   const [layout, setLayout] = useState({ x: 0, y: 0, w: 200, h: 40 });
+  const [positionLock, setPositionLock] = useState<{
+    top: number;
+    left: number;
+    opensBelow: boolean;
+    width: number;
+  } | null>(null);
 
   /* ── Submenu stack ── */
   type PickerLevel = {
@@ -172,10 +187,39 @@ export function FilterDropdown({
           ) => Promise<string | null>;
         }) => React.ReactNode;
         label: string;
+        preferredHeight?: number;
       }
     | PickerLevel;
   const [menuStack, setMenuStack] = useState<MenuLevel[]>([]);
-  const slideAnim = useRef(new Animated.Value(0)).current;
+  const contentFadeAnim = useRef(new Animated.Value(1)).current;
+  const isContentTransitioningRef = useRef(false);
+  const menuHeightAnim = useRef(new Animated.Value(0)).current;
+
+  const runContentTransition = useCallback((change: () => void) => {
+    if (isContentTransitioningRef.current) {
+      change();
+      return;
+    }
+    isContentTransitioningRef.current = true;
+    Animated.timing(contentFadeAnim, {
+      toValue: 0,
+      duration: 90,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start(() => {
+      change();
+      requestAnimationFrame(() => {
+        Animated.timing(contentFadeAnim, {
+          toValue: 1,
+          duration: 130,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }).start(() => {
+          isContentTransitioningRef.current = false;
+        });
+      });
+    });
+  }, [contentFadeAnim]);
 
   const topLevel = menuStack.length > 0 ? menuStack[menuStack.length - 1] : null;
   const currentItems =
@@ -210,6 +254,7 @@ export function FilterDropdown({
       ? {
           type: "custom",
           label: only.backLabel ?? sub.label,
+          preferredHeight: only.preferredHeight,
           contentFn: only.content,
         }
       : {
@@ -218,25 +263,11 @@ export function FilterDropdown({
           label: sub.label,
           ...(sub.backLabel != null ? { backLabel: sub.backLabel } : {}),
         };
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setMenuStack((s) => [...s, level]);
-    slideAnim.setValue(-1);
-    Animated.timing(slideAnim, {
-      toValue: 0,
-      duration: ANIM_MS,
-      useNativeDriver: true,
-    }).start();
+    runContentTransition(() => setMenuStack((s) => [...s, level]));
   };
 
   const popSubmenu = () => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setMenuStack((s) => s.slice(0, -1));
-    slideAnim.setValue(1);
-    Animated.timing(slideAnim, {
-      toValue: 0,
-      duration: ANIM_MS,
-      useNativeDriver: true,
-    }).start();
+    runContentTransition(() => setMenuStack((s) => s.slice(0, -1)));
   };
 
   const openSubmenu = useCallback(
@@ -247,17 +278,10 @@ export function FilterDropdown({
           label,
         }));
         const level: PickerLevel = { type: "picker", title, items: options, resolve };
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        setMenuStack((s) => [...s, level]);
-        slideAnim.setValue(-1);
-        Animated.timing(slideAnim, {
-          toValue: 0,
-          duration: ANIM_MS,
-          useNativeDriver: true,
-        }).start();
+        runContentTransition(() => setMenuStack((s) => [...s, level]));
       });
     },
-    []
+    [runContentTransition]
   );
 
   const handleBackPress = () => {
@@ -302,13 +326,18 @@ export function FilterDropdown({
     if (disabled) return;
     measure();
     setMenuStack([]);
-    slideAnim.setValue(0);
+    contentFadeAnim.setValue(1);
+    isContentTransitioningRef.current = false;
+    setPositionLock(null);
     setOpen(true);
   };
 
   const handleClose = () => {
     setOpen(false);
     setMenuStack([]);
+    setPositionLock(null);
+    contentFadeAnim.setValue(1);
+    isContentTransitioningRef.current = false;
   };
 
   const handleSelect = (val: string) => {
@@ -360,9 +389,10 @@ export function FilterDropdown({
     (max, l) => Math.max(max, l.length),
     0
   );
-  const estimatedTextW = longestLabel * 9 + 14 * 2 + 28 + RADIO_SIZE + 20;
+  const estimatedTextW =
+    longestLabel * 9 + 14 * 2 + 28 + (hideRadio ? 8 : RADIO_SIZE) + 20;
   const minW = showingCustomContent ? 280 : 180;
-  const dropW = Math.min(
+  const dropWRaw = Math.min(
     Math.max(layout.w, estimatedTextW, minW),
     screen.width - SCREEN_MARGIN * 2
   );
@@ -377,22 +407,37 @@ export function FilterDropdown({
     : currentItems.filter(
         (o) => "type" in o && (o as any).type === "group"
       ).length;
+  const groupSubtitleExtra = showingCustomContent
+    ? 0
+    : currentItems.reduce((acc, o) => {
+        if ("type" in o && o.type === "group") {
+          const g = o as SelectGroupLabel;
+          let add = 0;
+          if (g.labelNode != null) add += 36;
+          const st = g.subtitle;
+          if (typeof st === "string" && st.trim()) add += 44;
+          if (st != null && typeof st !== "string") add += 56;
+          return acc + add;
+        }
+        return acc;
+      }, 0);
   const estimatedH =
     optionCount * ITEM_HEIGHT +
     groupCount * GROUP_HEIGHT +
+    groupSubtitleExtra +
     DROPDOWN_PAD * 2 +
     (menuStack.length > 0 ? BACK_ROW_HEIGHT : 0) +
     (resetLabel && menuStack.length === 0 ? 28 : 0);
 
   const spaceBelow = screen.height - layout.y - layout.h - SCREEN_MARGIN;
   const spaceAbove = layout.y - SCREEN_MARGIN;
-  const opensBelow =
+  const opensBelowRaw =
     spaceBelow >= Math.min(estimatedH, maxDropdownHeight) ||
     spaceBelow >= spaceAbove;
 
   const GAP = 4;
   let dropTop: number;
-  if (opensBelow) {
+  if (opensBelowRaw) {
     dropTop = layout.y + layout.h + GAP;
   } else {
     const dropHPreview = Math.min(
@@ -403,30 +448,91 @@ export function FilterDropdown({
     if (dropTop < SCREEN_MARGIN) dropTop = SCREEN_MARGIN;
   }
 
+  const customPreferredH = activeCustomLevel?.preferredHeight;
   const marginBottom = showingCustomContent ? 8 : SCREEN_MARGIN;
+  const customMaxH = customPreferredH ?? maxDropdownHeight;
   const clampedMaxH = Math.min(
-    showingCustomContent ? CALENDAR_CONTENT_H : maxDropdownHeight,
-    opensBelow ? Math.max(spaceBelow, 100) : Math.max(spaceAbove, 100)
+    showingCustomContent ? customMaxH : maxDropdownHeight,
+    opensBelowRaw ? Math.max(spaceBelow, 100) : Math.max(spaceAbove, 100)
   );
   const dropH = showingCustomContent
-    ? Math.min(CALENDAR_CONTENT_H, clampedMaxH)
+    ? customPreferredH != null
+      ? Math.min(customPreferredH, clampedMaxH)
+      : clampedMaxH
     : Math.min(estimatedH, clampedMaxH);
 
-  let dropLeft = layout.x;
-  if (dropLeft + dropW > screen.width - SCREEN_MARGIN) {
-    dropLeft = screen.width - dropW - SCREEN_MARGIN;
+  useEffect(() => {
+    if (!open) {
+      menuHeightAnim.setValue(dropH);
+      return;
+    }
+    Animated.timing(menuHeightAnim, {
+      toValue: dropH,
+      duration: 180,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [open, dropH, menuHeightAnim]);
+
+  const listChromeH =
+    (menuStack.length > 0 ? BACK_ROW_HEIGHT : 0) +
+    (resetLabel && menuStack.length === 0 ? 28 : 0) +
+    DROPDOWN_PAD * 2;
+  const listScrollMaxH = Math.max(80, dropH - listChromeH);
+  /** Lock height only for explicitly fixed custom views (e.g. compact pages editor). */
+  const lockMenuHeightLayout = customPreferredH != null;
+
+  let dropLeftRaw = layout.x;
+  if (dropLeftRaw + dropWRaw > screen.width - SCREEN_MARGIN) {
+    dropLeftRaw = screen.width - dropWRaw - SCREEN_MARGIN;
   }
-  if (dropLeft < SCREEN_MARGIN) dropLeft = SCREEN_MARGIN;
+  if (dropLeftRaw < SCREEN_MARGIN) dropLeftRaw = SCREEN_MARGIN;
+
+  useEffect(() => {
+    if (!open || positionLock) return;
+    setPositionLock({
+      top: dropTop,
+      left: dropLeftRaw,
+      opensBelow: opensBelowRaw,
+      width: dropWRaw,
+    });
+  }, [open, positionLock, dropTop, dropLeftRaw, opensBelowRaw, dropWRaw]);
+
+  const opensBelow = positionLock?.opensBelow ?? opensBelowRaw;
+  const dropLeft = positionLock?.left ?? dropLeftRaw;
+  const lockedTop = positionLock?.top ?? dropTop;
+  const dropW = positionLock?.width ?? dropWRaw;
 
   /* ── Render items ── */
 
   const renderItem = (item: SelectItem, idx: number) => {
     if ("type" in item && item.type === "group") {
-      return (
-        <View key={`g-${idx}`} style={s.groupRow}>
+      const rawSub = item.subtitle;
+      const strSub = typeof rawSub === "string" ? rawSub.trim() : "";
+      const hasStr = strSub.length > 0;
+      const hasNode = rawSub != null && typeof rawSub !== "string";
+      const header =
+        item.labelNode != null ? (
+          <View style={s.groupHeaderRow}>{item.labelNode}</View>
+        ) : (
           <Text selectable={false} style={[s.groupLabel, { color: colors.sub }]}>
             {item.label}
           </Text>
+        );
+      return (
+        <View key={`g-${idx}`} style={s.groupRow}>
+          {header}
+          {hasStr ? (
+            <Text
+              selectable={false}
+              numberOfLines={4}
+              style={[s.groupSubtitle, { color: colors.sub }]}
+            >
+              {strSub}
+            </Text>
+          ) : hasNode ? (
+            <View style={s.groupSubtitleWrap}>{rawSub as React.ReactNode}</View>
+          ) : null}
         </View>
       );
     }
@@ -496,6 +602,7 @@ export function FilterDropdown({
           ? opt.trailingIcon(colors.accent)
           : opt.trailingIcon
         : null;
+    const indicatorShape = opt.indicatorShape ?? "circle";
 
     return (
       <Pressable
@@ -520,16 +627,21 @@ export function FilterDropdown({
         </Text>
         {trailingIcon ? (
           <View style={s.optionIcon}>{trailingIcon}</View>
-        ) : (
+        ) : hideRadio ? null : (
           <View
             style={[
               s.radio,
+              indicatorShape === "square" ? s.radioSquare : null,
               { borderColor: isSel ? colors.accent : colors.sub + "60" },
             ]}
           >
             {isSel && (
               <View
-                style={[s.radioDot, { backgroundColor: colors.accent }]}
+                style={[
+                  s.radioDot,
+                  indicatorShape === "square" ? s.radioDotSquare : null,
+                  { backgroundColor: colors.accent },
+                ]}
               />
             )}
           </View>
@@ -537,11 +649,6 @@ export function FilterDropdown({
       </Pressable>
     );
   };
-
-  const translateX = slideAnim.interpolate({
-    inputRange: [-1, 0, 1],
-    outputRange: [-dropW * 0.3, 0, dropW * 0.3],
-  });
 
   const canReset = onReset != null && resetLabel != null;
 
@@ -636,16 +743,16 @@ export function FilterDropdown({
       >
         <Pressable style={s.backdrop} onPress={handleClose} />
 
-        <View
+        <Animated.View
           pointerEvents="box-none"
           style={[
             s.menu,
             {
-              top: dropTop,
+              top: lockedTop,
               left: dropLeft,
               width: dropW,
-              maxHeight: clampedMaxH,
-              height: dropH,
+              maxHeight: menuHeightAnim,
+              ...(lockMenuHeightLayout ? { height: menuHeightAnim } : {}),
               backgroundColor: colors.surfaceElevated,
               borderColor: colors.accent + "20",
             },
@@ -684,13 +791,9 @@ export function FilterDropdown({
 
           <Animated.View
             style={[
-              { flex: 1, minHeight: 0 },
+              lockMenuHeightLayout ? { flex: 1, minHeight: 0 } : undefined,
               {
-                opacity: slideAnim.interpolate({
-                  inputRange: [-1, -0.3, 0, 0.3, 1],
-                  outputRange: [0.3, 0.8, 1, 0.8, 0.3],
-                }),
-                transform: [{ translateX }],
+                opacity: contentFadeAnim,
               },
             ]}
           >
@@ -724,13 +827,17 @@ export function FilterDropdown({
             {(!topLevel || topLevel?.type === "picker" || topLevel?.type === "list") ? (
               <View
                 style={[
-                  { flex: 1, minHeight: 0 },
+                  lockMenuHeightLayout ? { flex: 1, minHeight: 0 } : undefined,
                   activeCustomLevel ? StyleSheet.absoluteFillObject : undefined,
                 ]}
               >
                 <ScrollView
-                  style={{ flex: 1 }}
-                  contentContainerStyle={{ flexGrow: 1 }}
+                  style={
+                    lockMenuHeightLayout
+                      ? { flex: 1 }
+                      : { maxHeight: listScrollMaxH }
+                  }
+                  contentContainerStyle={{ flexGrow: 0 }}
                   bounces={false}
                   showsVerticalScrollIndicator={true}
                   nestedScrollEnabled={Platform.OS === "android"}
@@ -741,7 +848,7 @@ export function FilterDropdown({
               </View>
             ) : null}
           </Animated.View>
-        </View>
+        </Animated.View>
       </Modal>
     </View>
   );
@@ -866,15 +973,31 @@ const s = StyleSheet.create({
 
   groupRow: {
     paddingHorizontal: 14,
-    paddingVertical: 4,
-    height: GROUP_HEIGHT,
+    paddingVertical: 8,
+    minHeight: GROUP_HEIGHT,
     justifyContent: "center",
+  },
+  groupHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 22,
   },
   groupLabel: {
     fontSize: 11,
     fontWeight: "700",
     letterSpacing: 1,
     textTransform: "uppercase",
+  },
+  groupSubtitle: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: "500",
+    lineHeight: 16,
+    letterSpacing: 0,
+    textTransform: "none",
+  },
+  groupSubtitleWrap: {
+    marginTop: 6,
   },
 
   option: {
@@ -904,9 +1027,15 @@ const s = StyleSheet.create({
     justifyContent: "center",
     marginLeft: 10,
   },
+  radioSquare: {
+    borderRadius: 6,
+  },
   radioDot: {
     width: RADIO_DOT,
     height: RADIO_DOT,
     borderRadius: RADIO_DOT / 2,
+  },
+  radioDotSquare: {
+    borderRadius: 3,
   },
 });

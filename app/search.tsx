@@ -3,8 +3,11 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import LoadingSpinner from "@/components/LoadingSpinner";
+import * as DocumentPicker from "expo-document-picker";
 import {
+  Alert,
   Keyboard,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -22,11 +25,44 @@ import { useDateRange } from "@/context/DateRangeContext";
 import { useSort } from "@/context/SortContext";
 import { useFilterTags } from "@/context/TagFilterContext";
 import { useTheme } from "@/lib/ThemeContext";
+import { setImsearchPendingFile } from "@/lib/imsearchPendingUpload";
 import { useI18n } from "@/lib/i18n/I18nContext";
 import { BROWSE_CARDS_PER_PAGE } from "@/utils/browseGridPageSize";
 const KEY_HISTORY = "searchHistory";
 const BAR_H = 52;
 const BTN_SIDE = 40;
+
+function isNumericBookId(s: string): boolean {
+  return /^\d+$/.test(s.trim());
+}
+
+function pickImageFileWeb(): Promise<File | null> {
+  if (typeof document === "undefined") return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.onchange = () => resolve(input.files?.[0] ?? null);
+    input.click();
+  });
+}
+
+async function pickImageForSearch(): Promise<File | { uri: string; name: string; type: string } | null> {
+  if (Platform.OS === "web") {
+    return pickImageFileWeb();
+  }
+  const res = await DocumentPicker.getDocumentAsync({
+    type: "image/*",
+    copyToCacheDirectory: true,
+  });
+  if (res.canceled || !res.assets?.[0]) return null;
+  const a = res.assets[0];
+  return {
+    uri: a.uri,
+    name: a.name || "image.jpg",
+    type: a.mimeType || "image/jpeg",
+  };
+}
 function IconBtn({
   onPress,
   onLongPress,
@@ -103,15 +139,50 @@ export default function SearchScreen() {
   const submit = async (text = q) => {
     const query = text.trim();
     if (!query) return;
-    await saveHist(query);
     Keyboard.dismiss();
+    if (isNumericBookId(query)) {
+      await saveHist(query);
+      router.push({
+        pathname: "/book/[id]",
+        params: { id: query, title: "" },
+      });
+      return;
+    }
+    await saveHist(query);
     router.push({ pathname: "/explore", params: { query } });
+  };
+
+  const onSearchByImage = async () => {
+    try {
+      const picked = await pickImageForSearch();
+      if (!picked) return;
+      Keyboard.dismiss();
+      if (Platform.OS === "web" && picked instanceof File) {
+        setImsearchPendingFile({ kind: "web", file: picked });
+      } else if ("uri" in picked) {
+        setImsearchPendingFile({
+          kind: "native",
+          uri: picked.uri,
+          name: picked.name,
+          type: picked.type,
+        });
+      } else {
+        return;
+      }
+      router.push({
+        pathname: "/explore",
+        params: { imsearch: "1", imt: String(Date.now()) },
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      Alert.alert(t("toast.errorTitle"), msg);
+    }
   };
   const incStr = JSON.stringify(includes);
   const excStr = JSON.stringify(excludes);
   useEffect(() => {
     const query = q.trim();
-    if (!query || dateFilterActive) {
+    if (!query || dateFilterActive || isNumericBookId(query)) {
       setSug([]);
       setLoad(false);
       return;
@@ -190,6 +261,18 @@ export default function SearchScreen() {
                 <Feather name="x" size={16} color={colors.sub} />
               </Pressable>
             )}
+            <Pressable
+              hitSlop={8}
+              onPress={onSearchByImage}
+              accessibilityRole="button"
+              accessibilityLabel={t("search.searchByImage")}
+              style={({ pressed }) => [
+                styles.iconBtnSmallRound,
+                pressed && { backgroundColor: colors.accent + "22" },
+              ]}
+            >
+              <Feather name="image" size={18} color={colors.accent} />
+            </Pressable>
           </View>
           <IconBtn onPress={() => router.push("/tags")}>
             <Feather name="tag" size={18} color={colors.accent} />

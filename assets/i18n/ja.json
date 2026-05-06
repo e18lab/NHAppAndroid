@@ -166,7 +166,10 @@
   },
   "historyNotFound": "履歴は空です ¯\\_(ツ)_/¯",
   "lobby": {
-    "peersTitle": "あなたのデバイス",
+    "cloudTitle": "クラウド",
+    "cloudStatusConnecting": "クラウドに接続中…",
+    "cloudStatusReconnecting": "クラウドに再接続中… 同期までこの端末のみで保存されます。",
+    "cloudStatusLocalOnly": "クラウドに接続できません。この端末のみで動作中。復帰後に同期します。",
     "noPeers": "接続されたデバイスはありません"
   },
   "profile": {
@@ -320,7 +323,17 @@
     "results": "結果",
     "placeholder": "タイトルやタグで検索",
     "recent": "最近の検索",
-    "clearHistory": "履歴を消去"
+    "clearHistory": "履歴を消去",
+    "searchByImage": "画像で検索",
+    "imageSearchBusy": "画像検索中…",
+    "imageSearchNoMatches": "この画像に一致する nhentai はありません。",
+    "imageSearchOpenedBest": "{count} 件見つかりました — 最も近いものを開きました。",
+    "imageSearchResultsTitle": "画像検索",
+    "imageSearchSimilarity": "一致度",
+    "imageSearchNoPayload": "画像がありません。検索からもう一度選んでください。",
+    "imageSearchRetry": "再試行",
+    "imageSearchGoBack": "戻る",
+    "imageSearchPickOther": "別の画像を選ぶ"
   },
   "searchBar": {
     "backHome": "ホームに戻る",

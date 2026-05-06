@@ -166,7 +166,10 @@
   },
   "historyNotFound": "历史为空 ¯\\_(ツ)_/¯",
   "lobby": {
-    "peersTitle": "你的设备",
+    "cloudTitle": "云端",
+    "cloudStatusConnecting": "正在连接云端…",
+    "cloudStatusReconnecting": "正在重新连接云端… 恢复前更改仅保存在本机。",
+    "cloudStatusLocalOnly": "无法连接云端。仅在本机使用；网络恢复后会自动同步。",
     "noPeers": "没有已连接的设备"
   },
   "profile": {
@@ -320,7 +323,17 @@
     "results": "结果",
     "placeholder": "按标题或标签搜索",
     "recent": "最近搜索",
-    "clearHistory": "清除历史"
+    "clearHistory": "清除历史",
+    "searchByImage": "以图搜本",
+    "imageSearchBusy": "正在以图搜索…",
+    "imageSearchNoMatches": "没有与此图匹配的 nhentai 结果。",
+    "imageSearchOpenedBest": "找到 {count} 个结果 — 已打开最相似的一个。",
+    "imageSearchResultsTitle": "以图搜本",
+    "imageSearchSimilarity": "相似度",
+    "imageSearchNoPayload": "未选择图片。请从搜索页重新选择。",
+    "imageSearchRetry": "重试",
+    "imageSearchGoBack": "返回",
+    "imageSearchPickOther": "换一张图"
   },
   "searchBar": {
     "backHome": "返回首页",

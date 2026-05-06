@@ -10,6 +10,7 @@ import {
 import {
   connectLobby,
   disconnectLobby,
+  resumeLobbyConnection,
   sendStorageToLobby,
   setLobbyOnOpen,
   getLastReceivedFromLobbyAt,
@@ -17,8 +18,9 @@ import {
 import { getDeviceId } from "@/utils/deviceId";
 import { useOnlineMe } from "@/hooks/useOnlineMe";
 import { useCallback, useEffect, useRef } from "react";
+import { AppState } from "react-native";
 
-const PUSH_DEBOUNCE_MS = 1_500;
+const PUSH_DEBOUNCE_MS = 900;
 /** Не пушить, если только что получили storage из лобби (избегаем цикла). */
 const SKIP_PUSH_AFTER_RECEIVE_MS = 4_000;
 
@@ -37,8 +39,20 @@ export function useCloudStorageSync(): void {
     }
   }, [me?.id]);
 
+  const flushToLobby = useCallback(async () => {
+    if (!me?.id) return;
+    try {
+      const storage = await collectLocalStorageForSync();
+      sendStorageToLobby(storage);
+    } catch (e) {
+      console.warn("[cloudStorage] background flush failed:", e);
+    }
+  }, [me?.id]);
+
   const pushRef = useRef(push);
   pushRef.current = push;
+  const flushRef = useRef(flushToLobby);
+  flushRef.current = flushToLobby;
 
   useEffect(() => {
     if (!me?.id) {
@@ -73,11 +87,25 @@ export function useCloudStorageSync(): void {
       }, PUSH_DEBOUNCE_MS);
     });
 
+    const appStateSub = AppState.addEventListener("change", (state) => {
+      if (state === "background" || state === "inactive") {
+        if (pushDebounceTimer) {
+          clearTimeout(pushDebounceTimer);
+          pushDebounceTimer = null;
+        }
+        void flushRef.current();
+      }
+      if (state === "active") {
+        resumeLobbyConnection();
+      }
+    });
+
     return () => {
       setLobbyOnOpen(null);
       disconnectLobby();
       setStoragePushCallback(null);
       if (pushDebounceTimer) clearTimeout(pushDebounceTimer);
+      appStateSub.remove();
     };
-  }, [me?.id, me?.username, push]);
+  }, [me?.id, me?.username, push, flushToLobby]);
 }
