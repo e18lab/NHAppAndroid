@@ -347,7 +347,9 @@
       "presets": "プリセット",
       "fullPalette": "フルパレット",
       "infiniteScroll": "無限スクロール",
-      "infiniteScrollDesc": "ページネーションの代わりに下にスクロールすると次のページを自動的に読み込む"
+      "infiniteScrollDesc": "ページネーションの代わりに下にスクロールすると次のページを自動的に読み込む",
+      "includeTagsOnBookTagNav": "本のタグから開くとき、現在のタグ条件を引き継ぐ？",
+      "includeTagsOnBookTagNavDesc": "オンの場合、本のタグを開くと現在のタグフィルターを保持します。オフの場合、そのタグのみで開き、現在のフィルターは無視します。"
     },
     "display": {
       "androidNote": "Androidではフルスクリーン中でも下からスワイプでシステムバーを表示できます。",

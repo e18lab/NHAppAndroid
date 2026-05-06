@@ -4,8 +4,10 @@ import { galleryToBook } from "@/api/v2/compat";
 import { loadBookFromLocal } from "@/api/nhappApi/localBook";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import PageItem, { GAP } from "@/components/book/PageItem";
+import { RESET_TAGS_ON_BOOK_TAG_NAV_KEY } from "@/components/settings/keys";
 import { useFilterTags } from "@/context/TagFilterContext";
 import { useGridConfig } from "@/hooks/useGridConfig";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { useTheme } from "@/lib/ThemeContext";
 import {
   getDownloadProgressSnapshot,
@@ -55,6 +57,11 @@ export default function BookScreen() {
   const baseGrid = useGridConfig();
   const { t } = useI18n();
   const { filters, cycle } = useFilterTags();
+  const [resetTagsOnBookTagNav] = usePersistedState<boolean>(
+    RESET_TAGS_ON_BOOK_TAG_NAV_KEY,
+    false,
+    { syncToCloud: true }
+  );
   const { win, wide, innerPadding } = useWindowLayout();
   const { book, setBook, local, setLocal } = useBookData(idNum);
   const {
@@ -162,7 +169,12 @@ export default function BookScreen() {
       handleDownloadOrDelete={dlUi ? () => {} : handleDownloadOrDelete}
       modeOf={modeOf}
       onTagPress={(name: any) =>
-        router.push({ pathname: "/explore", params: { query: name, solo: "1" } })
+        router.push({
+          pathname: "/explore",
+          params: resetTagsOnBookTagNav
+            ? { query: name, solo: "1" }
+            : { query: name },
+        })
       }
       win={win}
       innerPadding={innerPadding}

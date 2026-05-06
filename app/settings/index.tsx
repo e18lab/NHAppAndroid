@@ -12,7 +12,13 @@ import GridSection from "@/components/settings/GridSection";
 import SettingsBuilder from "@/components/settings/SettingsBuilder";
 import SettingsLayout from "@/components/settings/SettingsLayout";
 
-import { FS_KEY, INFINITE_SCROLL_KEY, RH_KEY, STORAGE_KEY_HUE } from "@/components/settings/keys";
+import {
+  FS_KEY,
+  INFINITE_SCROLL_KEY,
+  RESET_TAGS_ON_BOOK_TAG_NAV_KEY,
+  RH_KEY,
+  STORAGE_KEY_HUE,
+} from "@/components/settings/keys";
 import type { SettingsSection } from "@/components/settings/schema";
 import { isElectron } from "@/electron/bridge";
 import { usePersistedState } from "@/hooks/usePersistedState";
@@ -56,6 +62,12 @@ export default function SettingsScreen() {
     false,
     { syncToCloud: true }
   );
+  const [resetTagsOnBookTagNav, setResetTagsOnBookTagNav] = usePersistedState<boolean>(
+    RESET_TAGS_ON_BOOK_TAG_NAV_KEY,
+    false,
+    { syncToCloud: true }
+  );
+  const includeTagsOnBookTagNav = !resetTagsOnBookTagNav;
 
   const toggleFullscreen = async (value: boolean) => {
     setFullscreen(value);
@@ -145,6 +157,18 @@ export default function SettingsScreen() {
                   value: infiniteScroll,
                   onToggle: setInfiniteScroll,
                 },
+                {
+                  id: "reset-tags-on-book-tag-nav",
+                  kind: "toggle",
+                  title:
+                    t("settings.appearance.includeTagsOnBookTagNav") ||
+                    "Учитывать теги при переходе по тегам в книге?",
+                  description:
+                    t("settings.appearance.includeTagsOnBookTagNavDesc") ||
+                    "Если включено, переход по тегу из книги учитывает текущие фильтры. Если выключено — открывает поиск по тегу без текущих фильтров.",
+                  value: includeTagsOnBookTagNav,
+                  onToggle: (v) => setResetTagsOnBookTagNav(!v),
+                },
               ],
             },
           ],
@@ -205,7 +229,7 @@ export default function SettingsScreen() {
 
       return sectionsList;
     },
-    [colors, fullscreen, hueLocal, infiniteScroll, t]
+    [colors, fullscreen, hueLocal, infiniteScroll, includeTagsOnBookTagNav, t]
   );
 
   return (

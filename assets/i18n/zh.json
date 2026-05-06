@@ -347,7 +347,9 @@
       "presets": "预设",
       "fullPalette": "完整调色板",
       "infiniteScroll": "无限滚动",
-      "infiniteScrollDesc": "向下滚动时自动加载下一页，而不是使用分页"
+      "infiniteScrollDesc": "向下滚动时自动加载下一页，而不是使用分页",
+      "includeTagsOnBookTagNav": "从书籍标签跳转时，是否保留当前标签筛选？",
+      "includeTagsOnBookTagNavDesc": "开启后，从书籍标签跳转会保留当前标签筛选；关闭后，只按该标签打开，不保留当前筛选。"
     },
     "display": {
       "androidNote": "在 Android 上，即使全屏模式下，也可以通过底部上滑显示系统栏。",

@@ -373,7 +373,9 @@
       "presets": "Presets",
       "fullPalette": "Full Palette",
       "infiniteScroll": "Infinite scroll",
-      "infiniteScrollDesc": "Automatically load next page when scrolling down instead of pagination"
+      "infiniteScrollDesc": "Automatically load next page when scrolling down instead of pagination",
+      "includeTagsOnBookTagNav": "Respect active tags when opening a book tag?",
+      "includeTagsOnBookTagNavDesc": "When enabled, opening a tag from a book keeps current tag filters. When disabled, it opens only that tag without current filters."
     },
     "display": {
       "androidNote": "On Android, system bars can be revealed with a bottom swipe even in fullscreen.",
