@@ -26,6 +26,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import BookCard from "./BookCard";
+import FastScrollRail, { type FastScrollRailHandle } from "./FastScrollRail";
 import LoadingSpinner from "./LoadingSpinner";
 
 export interface GridConfig {
@@ -171,6 +172,13 @@ export default function BookList<T extends Book = Book>({
   const [containerW, setContainerW] = useState(0);
   const [contentW, setContentW] = useState(0);
   const [scrollX, setScrollX] = useState(0);
+  const [viewportH, setViewportH] = useState(0);
+  const [contentH, setContentH] = useState(0);
+  const contentHRef = useRef(0);
+  const offsetYRef = useRef(0);
+  const railDraggingRef = useRef(false);
+  const dragMaxOffsetRef = useRef(0);
+  const railRef = useRef<FastScrollRailHandle | null>(null);
 
   const { t } = useI18n();
 
@@ -314,11 +322,16 @@ export default function BookList<T extends Book = Book>({
   };
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    if (!horizontal) return;
-    const x = e.nativeEvent.contentOffset.x;
-    setScrollX(x);
-    updateFades(x, contentW, containerW);
-    onScrollHorizontal?.(e);
+    if (horizontal) {
+      const x = e.nativeEvent.contentOffset.x;
+      setScrollX(x);
+      updateFades(x, contentW, containerW);
+      onScrollHorizontal?.(e);
+      return;
+    }
+    const y = e.nativeEvent.contentOffset.y;
+    offsetYRef.current = y;
+    railRef.current?.syncToOffset(y);
   };
 
   const renderCard: ListRenderItem<T> = useCallback(
@@ -509,7 +522,13 @@ export default function BookList<T extends Book = Book>({
 
   return (
     <View
-      onLayout={(e) => setContainerW(e.nativeEvent.layout.width)}
+      onLayout={(e) => {
+        setContainerW(e.nativeEvent.layout.width);
+        if (!horizontal) {
+          const h = e.nativeEvent.layout.height;
+          setViewportH(h);
+        }
+      }}
       style={[
         horizontal ? styles.rowContainer : styles.container,
         { backgroundColor: themeBg, position: "relative" },
@@ -557,11 +576,22 @@ export default function BookList<T extends Book = Book>({
                 : undefined
             }
             getItemLayout={getItemLayout as any}
-            onContentSizeChange={(w) => {
-              setContentW(w);
-              updateFades(scrollX, w, containerW);
+            onContentSizeChange={(w, h) => {
+              if (horizontal) {
+                setContentW(w);
+                updateFades(scrollX, w, containerW);
+              } else {
+                const prev = contentHRef.current;
+                const grew = h > prev + 16;
+                const majorShrink = h < prev - 240;
+                if (grew || majorShrink) {
+                  contentHRef.current = h;
+                  setContentH(h);
+                  railRef.current?.syncToOffset(offsetYRef.current);
+                }
+              }
             }}
-            onScroll={horizontal ? onScroll : undefined}
+            onScroll={onScroll}
             scrollEventThrottle={16}
             removeClippedSubviews={Platform.OS === 'android' || !!canUseFixedLayout}
             windowSize={Platform.OS === 'android' ? 5 : 7}
@@ -569,7 +599,32 @@ export default function BookList<T extends Book = Book>({
             initialNumToRender={Platform.OS === 'android' ? Math.min(6, uniqueData.length) : Math.min(12, uniqueData.length)}
             updateCellsBatchingPeriod={Platform.OS === 'android' ? 50 : 40}
           />
-
+          {!horizontal && Platform.OS !== "web" ? (
+            <FastScrollRail
+              ref={railRef}
+              viewportHeight={viewportH}
+              contentHeight={contentH}
+              accentColor={colors.accent}
+              railColor={colors.page + "77"}
+              onDragStateChange={(isDragging) => {
+                railDraggingRef.current = isDragging;
+                if (isDragging) {
+                  dragMaxOffsetRef.current = Math.max(0, contentH - viewportH);
+                }
+              }}
+              onSeekRatio={(ratio) => {
+                const maxOffset = railDraggingRef.current
+                  ? dragMaxOffsetRef.current
+                  : Math.max(0, contentH - viewportH);
+                const nextOffset = ratio * maxOffset;
+                offsetYRef.current = nextOffset;
+                listRef.current?.scrollToOffset({
+                  offset: nextOffset,
+                  animated: false,
+                });
+              }}
+            />
+          ) : null}
           {horizontal && (
             <>
               <Animated.View

@@ -29,6 +29,7 @@ import {
 import { useTheme } from "@/lib/ThemeContext";
 import { useI18n } from "@/lib/i18n/I18nContext";
 import BookCard from "./BookCard";
+import FastScrollRail, { type FastScrollRailHandle } from "./FastScrollRail";
 
 export type ReadHistoryEntry = [number, number, number, number];
 export const READ_HISTORY_KEY = "readHistory";
@@ -101,6 +102,9 @@ export default function BookListHistory<T extends Book = Book>({
   const onContainerLayout = useCallback(
     (e: { nativeEvent: { layout: { width: number; height: number } } }) => {
       const { width: w, height: h } = e.nativeEvent.layout;
+      if (Platform.OS !== "web") {
+        setViewportH(h);
+      }
       if (Platform.OS === "web" && (w > 0 || h > 0)) {
         setContainerLayout((prev) => ({ width: w || prev.width, height: h || prev.height }));
       }
@@ -167,6 +171,13 @@ export default function BookListHistory<T extends Book = Book>({
   const { cols, cardWidth, columnGap, paddingHorizontal, estCardH } = layout;
   const isSingleCol = cols === 1;
   const contentScale = isSingleCol ? 0.45 : 0.65;
+  const [viewportH, setViewportH] = useState(0);
+  const [contentH, setContentH] = useState(0);
+  const contentHRef = useRef(0);
+  const offsetYRef = useRef(0);
+  const railRef = useRef<FastScrollRailHandle | null>(null);
+  const railDraggingRef = useRef(false);
+  const dragMaxOffsetRef = useRef(0);
 
   const sections = useMemo<SectionShape<T>[]>(() => {
     const enriched = data
@@ -471,9 +482,22 @@ export default function BookListHistory<T extends Book = Book>({
           }
           onEndReached={onEndReached}
           onEndReachedThreshold={0.4}
-          onScroll={undefined}
-          scrollEventThrottle={undefined}
-          onContentSizeChange={undefined}
+          onScroll={(e) => {
+            const y = e.nativeEvent.contentOffset.y;
+            offsetYRef.current = y;
+            railRef.current?.syncToOffset(y);
+          }}
+          scrollEventThrottle={16}
+          onContentSizeChange={(_, h) => {
+            const prev = contentHRef.current;
+            const grew = h > prev + 16;
+            const majorShrink = h < prev - 240;
+            if (grew || majorShrink) {
+              contentHRef.current = h;
+              setContentH(h);
+              railRef.current?.syncToOffset(offsetYRef.current);
+            }
+          }}
           ListFooterComponent={
             loading ? (
               <ActivityIndicator style={styles.loader} />
@@ -496,6 +520,34 @@ export default function BookListHistory<T extends Book = Book>({
           extraData={tick}
         />
       )}
+      {Platform.OS !== "web" ? (
+        <FastScrollRail
+          ref={railRef}
+          viewportHeight={viewportH || containerLayout.height || 0}
+          contentHeight={contentH}
+          accentColor={colors.accent}
+          railColor={colors.page + "77"}
+          onDragStateChange={(isDragging) => {
+            railDraggingRef.current = isDragging;
+            if (isDragging) {
+              const vh = viewportH || containerLayout.height || 0;
+              dragMaxOffsetRef.current = Math.max(0, contentH - vh);
+            }
+          }}
+          onSeekRatio={(ratio) => {
+            const vh = viewportH || containerLayout.height || 0;
+            const maxOffset = railDraggingRef.current
+              ? dragMaxOffsetRef.current
+              : Math.max(0, contentH - vh);
+            const nextOffset = ratio * maxOffset;
+            offsetYRef.current = nextOffset;
+            const anyList = listRef.current as any;
+            if (anyList?.scrollToOffset) {
+              anyList.scrollToOffset({ offset: nextOffset, animated: false });
+            }
+          }}
+        />
+      ) : null}
       {children}
     </View>
   );

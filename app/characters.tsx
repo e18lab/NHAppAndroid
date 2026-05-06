@@ -7,6 +7,7 @@ import {
     FlatList,
     LayoutChangeEvent,
     Modal,
+    Platform,
     Pressable,
     RefreshControl,
     StyleSheet,
@@ -26,6 +27,7 @@ import {
 } from "@/api/nhappApi/characterCards";
 import { TagLite } from "@/components/book/TagBlock";
 import EditCharacterCardModal from "@/components/EditCharacterCardModal";
+import FastScrollRail, { type FastScrollRailHandle } from "@/components/FastScrollRail";
 import { useOnlineMe } from "@/hooks/useOnlineMe";
 import { useI18n } from "@/lib/i18n/I18nContext";
 import { useTheme } from "@/lib/ThemeContext";
@@ -131,6 +133,14 @@ export default function CharactersScreen() {
     parodyName: string | null;
   } | null>(null);
   const [renderVersion, setRenderVersion] = useState(0);
+  const [viewportH, setViewportH] = useState(0);
+  const [contentH, setContentH] = useState(0);
+  const contentHRef = useRef(0);
+  const offsetYRef = useRef(0);
+  const railRef = useRef<FastScrollRailHandle | null>(null);
+  const railDraggingRef = useRef(false);
+  const dragMaxOffsetRef = useRef(0);
+  const listRef = useRef<FlatList<any> | null>(null);
 
   const buildGroups = useCallback((items: CharacterCatalogItemDto[]) => {
     const processData = () => {
@@ -601,6 +611,7 @@ export default function CharactersScreen() {
         <LoadingSpinner fullScreen size="large" color={accent} />
       ) : (
         <FlatList
+          ref={listRef}
           data={flatListData}
           keyExtractor={(item, index) => {
             if ("type" in item && item.type === "group") {
@@ -653,6 +664,25 @@ export default function CharactersScreen() {
               tintColor={accent}
             />
           }
+          onLayout={(e) => {
+            setViewportH(e.nativeEvent.layout.height);
+          }}
+          onContentSizeChange={(_, h) => {
+            const prev = contentHRef.current;
+            const grew = h > prev + 16;
+            const majorShrink = h < prev - 240;
+            if (grew || majorShrink) {
+              contentHRef.current = h;
+              setContentH(h);
+              railRef.current?.syncToOffset(offsetYRef.current);
+            }
+          }}
+          onScroll={(e) => {
+            const y = e.nativeEvent.contentOffset.y;
+            offsetYRef.current = y;
+            railRef.current?.syncToOffset(y);
+          }}
+          scrollEventThrottle={16}
           ListEmptyComponent={
             isEmpty && !error ? (
               <View style={styles.centerBox}>
@@ -683,6 +713,32 @@ export default function CharactersScreen() {
           windowSize={10}
         />
       )}
+      {Platform.OS !== "web" ? (
+        <FastScrollRail
+          ref={railRef}
+          viewportHeight={viewportH}
+          contentHeight={contentH}
+          accentColor={accent}
+          railColor={colors.page + "77"}
+          onDragStateChange={(isDragging) => {
+            railDraggingRef.current = isDragging;
+            if (isDragging) {
+              dragMaxOffsetRef.current = Math.max(0, contentH - viewportH);
+            }
+          }}
+          onSeekRatio={(ratio) => {
+            const maxOffset = railDraggingRef.current
+              ? dragMaxOffsetRef.current
+              : Math.max(0, contentH - viewportH);
+            const nextOffset = ratio * maxOffset;
+            offsetYRef.current = nextOffset;
+            listRef.current?.scrollToOffset({
+              offset: nextOffset,
+              animated: false,
+            });
+          }}
+        />
+      ) : null}
 
       <Modal
         visible={authorModalVisible}

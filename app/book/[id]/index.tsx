@@ -3,6 +3,9 @@ import { getRandomGalleryId, getGallery, initCdn } from "@/api/v2";
 import { galleryToBook } from "@/api/v2/compat";
 import { loadBookFromLocal } from "@/api/nhappApi/localBook";
 import LoadingSpinner from "@/components/LoadingSpinner";
+import FastScrollRail, {
+  type FastScrollRailHandle,
+} from "@/components/FastScrollRail";
 import PageItem, { GAP } from "@/components/book/PageItem";
 import { RESET_TAGS_ON_BOOK_TAG_NAV_KEY } from "@/components/settings/keys";
 import { useFilterTags } from "@/context/TagFilterContext";
@@ -86,6 +89,13 @@ export default function BookScreen() {
   } = useFab();
 
   const [listW, setListW] = useState(win.w);
+  const [viewportH, setViewportH] = useState(0);
+  const [contentH, setContentH] = useState(0);
+  const contentHRef = useRef(0);
+  const offsetYRef = useRef(0);
+  const railDraggingRef = useRef(false);
+  const dragMaxOffsetRef = useRef(0);
+  const railRef = useRef<FastScrollRailHandle | null>(null);
   const [rndLoading, setRndLoading] = useState(false);
   const [showAllPages, setShowAllPages] = useState(false);
   const scrollPositionRef = useRef<number>(0);
@@ -344,12 +354,25 @@ export default function BookScreen() {
         renderItem={renderItem}
         onScroll={(e) => {
           onScrollFab(e);
-          setScrollY(e.nativeEvent.contentOffset.y);
-          scrollPositionRef.current = e.nativeEvent.contentOffset.y;
+          const y = e.nativeEvent.contentOffset.y;
+          setScrollY(y);
+          scrollPositionRef.current = y;
+          offsetYRef.current = y;
+          railRef.current?.syncToOffset(y);
+        }}
+        onContentSizeChange={(_, h) => {
+          const prev = contentHRef.current;
+          if (h > prev + 12 || h < prev - 12) {
+            contentHRef.current = h;
+            setContentH(h);
+            railRef.current?.syncToOffset(offsetYRef.current);
+          }
         }}
         onLayout={(e) => {
           const newWidth = e.nativeEvent.layout.width;
+          const nextH = e.nativeEvent.layout.height;
           if (Math.abs(newWidth - listW) > 1) setListW(newWidth);
+          if (Math.abs(nextH - viewportH) > 1) setViewportH(nextH);
         }}
         scrollEventThrottle={16}
         columnWrapperStyle={cols > 1 ? { alignItems: "stretch", paddingHorizontal: 0, justifyContent: "center" } : undefined}
@@ -363,6 +386,32 @@ export default function BookScreen() {
         updateCellsBatchingPeriod={50}
         windowSize={11}
       />
+      {Platform.OS !== "web" ? (
+        <FastScrollRail
+          ref={railRef}
+          viewportHeight={viewportH}
+          contentHeight={contentH}
+          accentColor={colors.accent}
+          railColor={colors.page + "77"}
+          onDragStateChange={(isDragging) => {
+            railDraggingRef.current = isDragging;
+            if (isDragging) {
+              dragMaxOffsetRef.current = Math.max(0, contentH - viewportH);
+            }
+          }}
+          onSeekRatio={(ratio) => {
+            const maxOffset = railDraggingRef.current
+              ? dragMaxOffsetRef.current
+              : Math.max(0, contentH - viewportH);
+            const nextOffset = ratio * maxOffset;
+            offsetYRef.current = nextOffset;
+            listRef.current?.scrollToOffset({
+              offset: nextOffset,
+              animated: false,
+            });
+          }}
+        />
+      ) : null}
 
       {/* FAB */}
       <Animated.View style={[s.fab, { transform: [{ scale: fabScale }], opacity: fabScale }]}>

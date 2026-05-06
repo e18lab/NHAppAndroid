@@ -51,6 +51,7 @@ import { CardPressable } from "@/components/ui/CardPressable";
 import { useAutoImport } from "@/context/AutoImportProvider";
 import { useTheme } from "@/lib/ThemeContext";
 import { useI18n } from "@/lib/i18n/I18nContext";
+import FastScrollRail, { type FastScrollRailHandle } from "./FastScrollRail";
 
 export interface GridConfig {
   numColumns: number;
@@ -642,6 +643,13 @@ export default function BookListOnline({
 
   const listRef = React.useRef<FlatList<Book>>(null);
   const flatListRef = scrollRef || listRef;
+  const [viewportH, setViewportH] = React.useState(0);
+  const [contentH, setContentH] = React.useState(0);
+  const contentHRef = React.useRef(0);
+  const offsetYRef = React.useRef(0);
+  const railDraggingRef = React.useRef(false);
+  const dragMaxOffsetRef = React.useRef(0);
+  const railRef = React.useRef<FastScrollRailHandle | null>(null);
 
   const _useWebGrid = Platform.OS === "web";
   const endFiredRef = React.useRef(false);
@@ -790,6 +798,26 @@ export default function BookListOnline({
             paddingTop: (paddingHorizontal ?? 0) / 2,
             paddingBottom: contentBottomPad,
           }}
+          onLayout={(e) => {
+            const h = e.nativeEvent.layout.height;
+            setViewportH(h);
+          }}
+          onContentSizeChange={(_, h) => {
+            const prev = contentHRef.current;
+            const grew = h > prev + 16;
+            const majorShrink = h < prev - 240;
+            if (grew || majorShrink) {
+              contentHRef.current = h;
+              setContentH(h);
+              railRef.current?.syncToOffset(offsetYRef.current);
+            }
+          }}
+          onScroll={(e) => {
+            const y = e.nativeEvent.contentOffset.y;
+            offsetYRef.current = y;
+            railRef.current?.syncToOffset(y);
+          }}
+          scrollEventThrottle={16}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
@@ -813,7 +841,32 @@ export default function BookListOnline({
           removeClippedSubviews={Platform.OS === "android"}
         />
       )}
-
+      {Platform.OS !== "web" ? (
+        <FastScrollRail
+          ref={railRef}
+          viewportHeight={viewportH}
+          contentHeight={contentH}
+          accentColor={colors.accent}
+          railColor={colors.page + "77"}
+          onDragStateChange={(isDragging) => {
+            railDraggingRef.current = isDragging;
+            if (isDragging) {
+              dragMaxOffsetRef.current = Math.max(0, contentH - viewportH);
+            }
+          }}
+          onSeekRatio={(ratio) => {
+            const maxOffset = railDraggingRef.current
+              ? dragMaxOffsetRef.current
+              : Math.max(0, contentH - viewportH);
+            const nextOffset = ratio * maxOffset;
+            offsetYRef.current = nextOffset;
+            flatListRef.current?.scrollToOffset({
+              offset: nextOffset,
+              animated: false,
+            });
+          }}
+        />
+      ) : null}
       {undoStack.length > 0 && (
         <View
           pointerEvents="box-none"
