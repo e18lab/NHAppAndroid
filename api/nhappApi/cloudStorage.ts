@@ -5,6 +5,8 @@
 import { API_BASE_URL } from "@/config/api";
 import { mergeValueForKey } from "@/api/nhappApi/storageMerge";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
+import * as Application from "expo-application";
 
 const STORAGE_PREFIX_EXCLUDE = "@auth"; // Не синхронизируем токены и т.п.
 
@@ -17,6 +19,12 @@ const STORAGE_KEYS_EXCLUDE = new Set([
   /** CSRF одноразовый / привязан к сессии — в storage_json на сервере не нужен */
   "nh.csrf",
 ]);
+const APP_VERSION_KEY = "@cloud.appVersion";
+const APP_VERSION_VALUE =
+  Constants.expoConfig?.version ??
+  Application.nativeApplicationVersion ??
+  Application.applicationVersion ??
+  "unknown";
 
 export type StorageResponse = {
   storage: Record<string, unknown>;
@@ -72,12 +80,13 @@ export async function collectLocalStorageForSync(): Promise<Record<string, strin
   const toSync = keys.filter(
     (k) => !k.startsWith(STORAGE_PREFIX_EXCLUDE) && !STORAGE_KEYS_EXCLUDE.has(k)
   );
-  if (toSync.length === 0) return {};
+  if (toSync.length === 0) return { [APP_VERSION_KEY]: APP_VERSION_VALUE };
   const pairs = await AsyncStorage.multiGet(toSync);
   const out: Record<string, string> = {};
   for (const [key, value] of pairs) {
     if (value != null) out[key] = value;
   }
+  out[APP_VERSION_KEY] = APP_VERSION_VALUE;
   return out;
 }
 
