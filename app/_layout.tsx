@@ -289,8 +289,9 @@ function AppContent() {
   }, [pathname, router]);
 
   const showSearchBar = useMemo(() => {
-    const blocked = pathname === "/read" || pathname === "/search";
-    return !blocked;
+    if (pathname === "/read" || pathname === "/search" || pathname === "/")
+      return false;
+    return true;
   }, [pathname]);
 
   if (!gridReady) {

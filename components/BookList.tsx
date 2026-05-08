@@ -63,9 +63,14 @@ export interface BookListProps<T extends Book = Book> {
   children?: ReactNode;
   scrollRef?: React.RefObject<FlatList<T> | null>;
   onScrollHorizontal?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  /** Extra bottom padding inside the scroll area (e.g. floating overlay chrome). */
+  contentBottomInset?: number;
 }
 
 const _isWebGrid = Platform.OS === "web";
+
+/** На широком окне (web/Electron) сетка как на телефоне — ограничение ширины и центрирование. */
+const WEB_GRID_MAX_WIDTH = 560;
 
 export default function BookList<T extends Book = Book>({
   data,
@@ -88,6 +93,7 @@ export default function BookList<T extends Book = Book>({
   children,
   scrollRef: externalScrollRef,
   onScrollHorizontal,
+  contentBottomInset = 0,
 }: BookListProps<T>) {
   const { colors } = useTheme();
   const internalListRef = useRef<FlatList<T> | null>(null);
@@ -102,6 +108,15 @@ export default function BookList<T extends Book = Book>({
     "#1C1C1C";
 
   const base = useMemo<GridConfig>(() => {
+    if (Platform.OS === "web") {
+      const capW = Math.min(width, WEB_GRID_MAX_WIDTH);
+      if (capW <= 600) {
+        return (
+          gridConfig?.phonePortrait ??
+          gridConfig?.default ?? { numColumns: 2, paddingHorizontal: 10, columnGap: 5 }
+        );
+      }
+    }
     const isPortrait = height > width;
     const isTablet = width > 600;
     return isTablet
@@ -124,7 +139,14 @@ export default function BookList<T extends Book = Book>({
     const padH = base.paddingHorizontal ?? 0;
     const gap = base.columnGap ?? 0;
     const minW = base.minColumnWidth ?? 80;
-    const avail = Math.max(0, width - padH * 2);
+
+    const sideInset =
+      Platform.OS === "web" && !horizontal && width > WEB_GRID_MAX_WIDTH
+        ? (width - WEB_GRID_MAX_WIDTH) / 2
+        : 0;
+    const cappedWidth =
+      Platform.OS === "web" && !horizontal ? Math.min(width, WEB_GRID_MAX_WIDTH) : width;
+    const avail = Math.max(0, cappedWidth - padH * 2);
 
     const uniq = (() => {
       const seen = new Set<number>();
@@ -143,7 +165,7 @@ export default function BookList<T extends Book = Book>({
         cols: 1,
         cardWidth: cw,
         columnGap: gap,
-        paddingHorizontal: padH,
+        paddingHorizontal: padH + sideInset,
         uniqueData: uniq,
         estCardH: estH,
       };
@@ -160,7 +182,7 @@ export default function BookList<T extends Book = Book>({
       cols: maxCols,
       cardWidth: cw,
       columnGap: gap,
-      paddingHorizontal: padH,
+      paddingHorizontal: padH + sideInset,
       uniqueData: uniq,
       estCardH: estH,
     };
@@ -395,6 +417,7 @@ export default function BookList<T extends Book = Book>({
 
   const topPad = paddingHorizontal / 2;
   const bottomPad = paddingHorizontal / 2;
+  const scrollBottomPad = bottomPad + contentBottomInset;
 
   const useWebGrid = _isWebGrid && !horizontal;
 
@@ -461,7 +484,7 @@ export default function BookList<T extends Book = Book>({
             {
               paddingHorizontal,
               paddingTop: topPad,
-              paddingBottom: bottomPad || undefined,
+              paddingBottom: scrollBottomPad || undefined,
               flexGrow: uniqueData.length === 0 ? 1 : undefined,
             },
           ]}
@@ -556,7 +579,7 @@ export default function BookList<T extends Book = Book>({
               flexGrow: !horizontal && uniqueData.length === 0 ? 1 : undefined,
               paddingHorizontal,
               paddingTop: topPad,
-              paddingBottom: bottomPad || undefined,
+              paddingBottom: scrollBottomPad || undefined,
             }}
             onEndReached={onEndReached}
             onEndReachedThreshold={0.4}

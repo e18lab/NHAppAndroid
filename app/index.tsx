@@ -2,8 +2,9 @@ import type { Book } from "@/api/nhappApi/types";
 import { fetchGalleryBrowseSlice } from "@/api/v2";
 import { galleryCardToBook } from "@/api/v2/compat";
 import BookList from "@/components/BookList";
+import { useDrawer } from "@/components/DrawerContext";
 import NoResultsPanel from "@/components/NoResultsPanel";
-import PaginationBar from "@/components/PaginationBar";
+import { BrowseFloatingBar, BrowseOptionsSheet } from "@/components/uikit";
 import { requestStoragePush, subscribeToStorageApplied } from "@/api/nhappApi/cloudStorage";
 import { INFINITE_SCROLL_KEY } from "@/components/settings/keys";
 import { useDateRange } from "@/context/DateRangeContext";
@@ -19,6 +20,7 @@ import { BROWSE_CARDS_PER_PAGE } from "@/utils/browseGridPageSize";
 import { scrollToTop } from "@/utils/scrollToTop";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { setPendingWhatsNew } from "@/store/pendingWhatsNew";
+import { Feather } from "@expo/vector-icons";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, {
   useCallback,
@@ -34,12 +36,14 @@ import {
   ImageBackground,
   Linking,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
   useWindowDimensions,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 
 type CacheEntry = {
@@ -58,6 +62,8 @@ type ResultState = "idle" | "loading" | "no-results" | "timeout" | "error";
 
 export default function HomeScreen() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const { openDrawer } = useDrawer();
   const router = useRouter();
   const { query: rawQ, solo: rawSolo } = useLocalSearchParams<{
     query?: string | string[];
@@ -89,8 +95,10 @@ export default function HomeScreen() {
 
   const [books, setBooks] = useState<Book[]>([]);
   const [totalPages, setTotal] = useState(1);
+  const [totalBrowseItems, setTotalBrowseItems] = useState(0);
   const [currentPage, setPage] = useState(1);
   const [favorites, setFav] = useState<Set<number>>(new Set());
+  const [optionsSheetOpen, setOptionsSheetOpen] = useState(false);
 
   const [resultState, setResultState] = useState<ResultState>("idle");
   const [errorMsg, setErr] = useState<string>("");
@@ -168,6 +176,7 @@ export default function HomeScreen() {
         if (cached && (freshEnough || swr)) {
           setBooks(cached.books);
           setTotal(cached.totalPages);
+          setTotalBrowseItems(cached.totalItems ?? 0);
           setResultState(cached.books.length ? "idle" : "no-results");
           if (!swr && freshEnough) {
             setPaginating(false);
@@ -225,6 +234,7 @@ export default function HomeScreen() {
           }
         }
         setTotal(uiTotalPages);
+        setTotalBrowseItems(totalItems);
         setResultState(books.length ? "idle" : "no-results");
       } catch (e: any) {
         clearTimeout(timer);
@@ -503,8 +513,63 @@ export default function HomeScreen() {
   const showListSkeleton =
     resultState === "loading" && books.length === 0;
 
+  const showFloatingBrowseBar = !showNoResults;
+
+  const goToBrowsePage = useCallback(
+    (p: number) => {
+      setPaginating(true);
+      skipPageChangeRef.current = true;
+      scrollToTop(scrollRef);
+      const paginationCacheKey = JSON.stringify({
+        v: 3,
+        ipp: BROWSE_CARDS_PER_PAGE,
+        q: [query.trim(), pagesQuery].filter(Boolean).join(" ").trim(),
+        sort,
+        inc: activeIncludes,
+        exc: activeExcludes,
+        page: p,
+        uploaded: uploaded ?? null,
+        pages: pagesQuery,
+      });
+      fetchPage(p, paginationCacheKey, false, false, false);
+      setPage(p);
+    },
+    [
+      fetchPage,
+      query,
+      pagesQuery,
+      sort,
+      activeIncludes,
+      activeExcludes,
+      uploaded,
+    ]
+  );
+
   return (
-    <View style={styles.container}>
+    <View
+      style={[
+        styles.container,
+      ]}
+    >
+      {!showFloatingBrowseBar && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Menu"
+          onPress={openDrawer}
+          hitSlop={12}
+          style={({ pressed }) => [
+            styles.homeMenuFab,
+            {
+              top: insets.top + 6,
+              backgroundColor: colors.surfaceElevated,
+              opacity: pressed ? 0.88 : 1,
+            },
+          ]}
+        >
+          <Feather name="menu" size={22} color={colors.txt} />
+        </Pressable>
+      )}
+
       <UpdateBanner
         update={update}
         colors={colors}
@@ -539,6 +604,7 @@ export default function HomeScreen() {
             loading={showListSkeleton}
             refreshing={false}
             onRefresh={onRefresh}
+            contentBottomInset={showFloatingBrowseBar ? 84 : 0}
             isFavorite={(id) => favorites.has(id)}
             onToggleFavorite={toggleFav}
             onPress={(id) => {
@@ -573,39 +639,40 @@ export default function HomeScreen() {
                 : undefined
             }
           />
-          {!infiniteScroll && (
-            <PaginationBar
+          {showFloatingBrowseBar && (
+            <BrowseFloatingBar
               currentPage={currentPage}
               totalPages={totalPages}
-              onChange={(p) => {
-                setPaginating(true);
-                skipPageChangeRef.current = true;
-                const paginationCacheKey = JSON.stringify({
-                  v: 3,
-                  ipp: BROWSE_CARDS_PER_PAGE,
-                  q: [query.trim(), pagesQuery].filter(Boolean).join(" ").trim(),
-                  sort,
-                  inc: activeIncludes,
-                  exc: activeExcludes,
-                  page: p,
-                  uploaded: uploaded ?? null,
-                  pages: pagesQuery,
-                });
-                fetchPage(p, paginationCacheKey, false, false, false);
-                setPage(p);
-              }}
-              scrollRef={scrollRef}
-              hideWhenInfiniteScroll={false}
+              totalItems={totalBrowseItems}
+              title={t("menu.home")}
+              canPrev={currentPage > 1}
+              canNext={currentPage < totalPages}
+              onPrev={() => goToBrowsePage(currentPage - 1)}
+              onNext={() => goToBrowsePage(currentPage + 1)}
+              onSearchHomePress={() => router.push("/search")}
+              onMenuPress={() => setOptionsSheetOpen(true)}
             />
           )}
         </>
       )}
+      <BrowseOptionsSheet
+        visible={optionsSheetOpen}
+        onClose={() => setOptionsSheetOpen(false)}
+        onReload={onRefresh}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, overflow: "visible" },
+  homeMenuFab: {
+    position: "absolute",
+    left: 10,
+    zIndex: 20,
+    padding: 10,
+    borderRadius: 12,
+  },
   ctaBtn: {
     paddingHorizontal: 12,
     paddingVertical: 8,

@@ -25,4 +25,8 @@ export { BottomNavBar } from "./BottomNavBar";
 export type { BottomNavBarItem, BottomNavBarProps } from "./BottomNavBar";
 export { SwipeableTabStrip } from "./SwipeableTabStrip";
 export type { SwipeableTabStripProps, SwipeableTabItem } from "./SwipeableTabStrip";
+export { BrowseOptionsSheet } from "./BrowseOptionsSheet";
+export type { BrowseOptionsSheetProps } from "./BrowseOptionsSheet";
+export { BrowseFloatingBar } from "./BrowseFloatingBar";
+export type { BrowseFloatingBarProps } from "./BrowseFloatingBar";
 
