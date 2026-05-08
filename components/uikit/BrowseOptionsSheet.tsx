@@ -16,6 +16,7 @@ import {
   PanResponder,
   Platform,
   Pressable as RNPressable,
+  ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -26,6 +27,7 @@ import {
   GestureDetector,
   GestureHandlerRootView,
   Pressable as RNGHPressable,
+  ScrollView as GHScrollView,
 } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -33,7 +35,6 @@ const SheetPressable = Platform.OS === "web" ? RNPressable : RNGHPressable;
 
 const SHEET_BG = "#232123";
 const TILE = "#312E31";
-const HANDLE = "#454145";
 const SHEET_MAX_WIDTH = 391;
 const ICON_BOX = 60;
 const ICON_RADIUS = 15;
@@ -44,8 +45,6 @@ const CELL_H = ICON_BOX + ICON_LABEL_GAP + LABEL_BLOCK_H;
 const ROW_GAP = 15;
 const COL_GAP = 35;
 const TOP_RADIUS = 15;
-const HANDLE_W = 48;
-const HANDLE_H = 5;
 const GRID_H_PAD = 23;
 const OPEN_SPRING = { tension: 64, friction: 12 };
 const LOGO = require("@/assets/images/adaptive-icon.png");
@@ -141,6 +140,8 @@ export function BrowseOptionsSheet({ visible, onClose, onReload }: BrowseOptions
   const translateY = useRef(new Animated.Value(0)).current;
   const backdropOp = useRef(new Animated.Value(0)).current;
   const dragStartY = useRef(0);
+  /** Прокрутка меню внутри шита — свайп «вниз» закрывает только у верхней границы (overscroll). */
+  const scrollYRef = useRef(0);
   const maxSlideRef = useRef(Math.min(winH * 0.92, winH - insets.top));
 
   const maxSlide = useMemo(() => Math.min(winH * 0.92, winH - insets.top), [winH, insets.top]);
@@ -150,6 +151,7 @@ export function BrowseOptionsSheet({ visible, onClose, onReload }: BrowseOptions
 
   useEffect(() => {
     if (visible && !wasVisible.current) {
+      scrollYRef.current = 0;
       translateY.setValue(maxSlide);
       backdropOp.setValue(0);
       Animated.parallel([
@@ -201,58 +203,23 @@ export function BrowseOptionsSheet({ visible, onClose, onReload }: BrowseOptions
     });
   }, [onClose, runCloseAnim]);
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, g) =>
-        Math.abs(g.dy) > 5 && Math.abs(g.dy) > Math.abs(g.dx) * 0.65,
-      onMoveShouldSetPanResponderCapture: (_, g) =>
-        Math.abs(g.dy) > 5 && Math.abs(g.dy) > Math.abs(g.dx) * 0.65,
-      onPanResponderGrant: () => {
-        translateY.stopAnimation((v) => {
-          dragStartY.current = v;
-        });
-      },
-      onPanResponderMove: (_, g) => {
-        const next = Math.max(0, dragStartY.current + g.dy);
-        translateY.setValue(next);
-        const m = maxSlideRef.current;
-        const bop = m > 0 ? Math.max(0, Math.min(1, 1 - next / m)) : 1;
-        backdropOp.setValue(bop);
-      },
-      onPanResponderRelease: (_, g) => {
-        const threshold = Math.min(120, maxSlideRef.current * 0.14);
-        const vyDismiss = Platform.OS === "web" ? 0.2 : 0.45;
-        translateY.stopAnimation((cur) => {
-          const vy = g.vy ?? 0;
-          if (cur > threshold || vy > vyDismiss) {
-            runCloseAnim(onClose);
-          } else {
-            Animated.parallel([
-              Animated.spring(translateY, {
-                toValue: 0,
-                ...OPEN_SPRING,
-                useNativeDriver: USE_NATIVE_DRIVER,
-              }),
-              Animated.timing(backdropOp, {
-                toValue: 1,
-                duration: 200,
-                useNativeDriver: USE_NATIVE_DRIVER,
-              }),
-            ]).start();
-          }
-        });
-      },
-    })
-  ).current;
+  const pullToDismissGesture = (g: { dy: number; dx: number }) =>
+    g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx) * 0.65;
+
+  const scrollRef = useRef<React.ComponentRef<typeof GHScrollView>>(null);
+  const panDismissMovedRef = useRef(false);
 
   const snapDragStart = useCallback(() => {
+    panDismissMovedRef.current = false;
     translateY.stopAnimation((v) => {
       dragStartY.current = v;
     });
   }, [translateY]);
 
-  const applyPanDrag = useCallback(
+  const applyPanDragIfAllowed = useCallback(
     (translationY: number) => {
+      if (scrollYRef.current > 8) return;
+      panDismissMovedRef.current = true;
       const next = Math.max(0, dragStartY.current + translationY);
       translateY.setValue(next);
       const m = maxSlideRef.current;
@@ -262,11 +229,15 @@ export function BrowseOptionsSheet({ visible, onClose, onReload }: BrowseOptions
     [backdropOp, translateY]
   );
 
-  const finishPanDrag = useCallback(
-    (velocityY: number) => {
+  const finalizePanRelease = useCallback(
+    (vyIn?: number) => {
       const threshold = Math.min(120, maxSlideRef.current * 0.14);
+      const vyDismiss = Platform.OS === "web" ? 0.2 : 0.45;
       translateY.stopAnimation((cur) => {
-        if (cur > threshold || velocityY > 850) {
+        const vy = vyIn ?? 0;
+        const velocityDismiss =
+          panDismissMovedRef.current && vy > vyDismiss;
+        if (cur > threshold || velocityDismiss) {
           runCloseAnim(onClose);
         } else {
           Animated.parallel([
@@ -287,23 +258,57 @@ export function BrowseOptionsSheet({ visible, onClose, onReload }: BrowseOptions
     [backdropOp, onClose, runCloseAnim, translateY]
   );
 
-  const nativeDismissPan = useMemo(() => {
+  const panGrantMoveRelease = {
+    onPanResponderGrant: () => {
+      panDismissMovedRef.current = false;
+      translateY.stopAnimation((v) => {
+        dragStartY.current = v;
+      });
+    },
+    onPanResponderMove: (_: unknown, g: { dy: number }) => {
+      panDismissMovedRef.current = true;
+      const next = Math.max(0, dragStartY.current + g.dy);
+      translateY.setValue(next);
+      const m = maxSlideRef.current;
+      const bop = m > 0 ? Math.max(0, Math.min(1, 1 - next / m)) : 1;
+      backdropOp.setValue(bop);
+    },
+    onPanResponderRelease: (_: unknown, g: { vy?: number }) => {
+      finalizePanRelease(g.vy);
+    },
+  };
+
+  /** Web: PanResponder; native scroll перехватывает жест — см. nativeSheetPan + GHScrollView. */
+  const sheetDismissPan = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) =>
+        scrollYRef.current <= 6 && pullToDismissGesture(g),
+      onMoveShouldSetPanResponderCapture: (_, g) =>
+        scrollYRef.current <= 6 && pullToDismissGesture(g),
+      ...panGrantMoveRelease,
+    })
+  ).current;
+
+  const nativeSheetPan = useMemo(() => {
     if (Platform.OS === "web") return null;
     const { runOnJS } =
       require("react-native-reanimated") as typeof import("react-native-reanimated");
     return Gesture.Pan()
       .activeOffsetY(10)
       .failOffsetX([-44, 44])
-      .onStart(() => {
+      .simultaneousWithExternalGesture(
+        scrollRef as unknown as React.RefObject<React.ComponentType<object>>
+      )
+      .onBegin(() => {
         runOnJS(snapDragStart)();
       })
       .onUpdate((e) => {
-        runOnJS(applyPanDrag)(e.translationY);
+        runOnJS(applyPanDragIfAllowed)(e.translationY);
       })
       .onEnd((e) => {
-        runOnJS(finishPanDrag)(e.velocityY ?? 0);
+        runOnJS(finalizePanRelease)(e.velocityY ?? 0);
       });
-  }, [applyPanDrag, finishPanDrag, snapDragStart]);
+  }, [applyPanDragIfAllowed, finalizePanRelease, snapDragStart]);
 
   const goRandom = useCallback(async () => {
     if (randBusy) return;
@@ -370,14 +375,13 @@ export function BrowseOptionsSheet({ visible, onClose, onReload }: BrowseOptions
     },
   ];
 
-  const sheetBody = (
-    <>
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: SHEET_BG }]} />
-      <View style={{ paddingHorizontal: pad, paddingTop: 10 }} pointerEvents="box-none">
-        <View style={styles.handleWrap}>
-          <View style={styles.handle} />
-        </View>
+  const sheetScrollMaxHeight = Math.max(
+    160,
+    maxSlide - Math.max(insets.bottom, 14)
+  );
 
+  const scrollContent = (
+    <>
         <View style={styles.headerRow}>
           <View style={styles.brandBlock}>
             <Image source={LOGO} style={styles.logo} resizeMode="cover" />
@@ -453,8 +457,42 @@ export function BrowseOptionsSheet({ visible, onClose, onReload }: BrowseOptions
             );
           })}
         </View>
-      </View>
     </>
+  );
+
+  const sheetScrollProps = {
+    nestedScrollEnabled: true as boolean,
+    keyboardShouldPersistTaps: "handled" as const,
+    showsVerticalScrollIndicator: Platform.OS !== "web",
+    bounces: Platform.OS === "ios",
+    style: { maxHeight: sheetScrollMaxHeight },
+    contentContainerStyle: {
+      paddingHorizontal: pad,
+      paddingBottom: 12,
+    },
+    scrollEventThrottle: 16,
+    onScroll: (e: { nativeEvent: { contentOffset: { y: number } } }) => {
+      scrollYRef.current = e.nativeEvent.contentOffset.y;
+    },
+  };
+
+  const sheetBody = (
+    <>
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: SHEET_BG }]} pointerEvents="none" />
+      {Platform.OS === "web" ? (
+        <ScrollView {...sheetScrollProps}>{scrollContent}</ScrollView>
+      ) : (
+        <GHScrollView ref={scrollRef} {...sheetScrollProps}>
+          {scrollContent}
+        </GHScrollView>
+      )}
+    </>
+  );
+
+  const sheetFrame = (
+    <Animated.View style={sheetFrameStyle}>
+      {sheetBody}
+    </Animated.View>
   );
 
   return (
@@ -466,13 +504,13 @@ export function BrowseOptionsSheet({ visible, onClose, onReload }: BrowseOptions
           </Animated.View>
 
           {Platform.OS === "web" ? (
-            <Animated.View style={sheetFrameStyle} {...panResponder.panHandlers}>
+            <Animated.View style={sheetFrameStyle} {...sheetDismissPan.panHandlers}>
               {sheetBody}
             </Animated.View>
+          ) : nativeSheetPan ? (
+            <GestureDetector gesture={nativeSheetPan}>{sheetFrame}</GestureDetector>
           ) : (
-            <GestureDetector gesture={nativeDismissPan!}>
-              <Animated.View style={sheetFrameStyle}>{sheetBody}</Animated.View>
-            </GestureDetector>
+            sheetFrame
           )}
         </View>
       </GestureHandlerRootView>
@@ -504,9 +542,6 @@ const styles = StyleSheet.create({
       web: {
         boxShadow: "0 0 4px rgba(0,0,0,0.25)",
         maxWidth: "100%",
-        touchAction: "none",
-        cursor: "pointer",
-        userSelect: "none",
       },
       default: {
         shadowColor: "#000",
@@ -515,17 +550,6 @@ const styles = StyleSheet.create({
         shadowRadius: 16,
       },
     }),
-  },
-  handleWrap: {
-    alignItems: "center",
-    paddingVertical: 8,
-    marginBottom: 6,
-  },
-  handle: {
-    width: HANDLE_W,
-    height: HANDLE_H,
-    borderRadius: HANDLE_H / 2,
-    backgroundColor: HANDLE,
   },
   headerRow: {
     flexDirection: "row",

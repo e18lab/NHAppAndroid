@@ -11,6 +11,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
   type ViewStyle,
 } from "react-native";
@@ -20,6 +21,9 @@ const OUTER_BG_BOTTOM = "#110F11";
 const SEGMENT_BG = "#232123";
 const SEGMENT_SHADOW = "#00000040";
 const TXT = "#FFFFFF";
+/** PC / планшет: бар не на всю ширину окна. */
+const FLOATING_BAR_MAX_WIDTH = 560;
+const TABLET_MIN_SHORTEST_SIDE = 600;
 
 function formatThousands(n: number): string {
   return String(Math.max(0, Math.floor(n))).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
@@ -53,8 +57,11 @@ export function BrowseFloatingBar({
   canNext,
   style,
 }: BrowseFloatingBarProps) {
+  const { width: winW, height: winH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const bottomOffset = 15 + insets.bottom;
+  const limitBarWidth =
+    Platform.OS === "web" || Math.min(winW, winH) >= TABLET_MIN_SHORTEST_SIDE;
   const pageLabel = useMemo(() => {
     const rhs =
       totalItems != null && totalItems > 0
@@ -75,27 +82,31 @@ export function BrowseFloatingBar({
     <View
       pointerEvents="box-none"
       style={[
-        styles.shell,
-        Platform.OS === "web"
-          ? [
-              styles.fixedViewport,
-              {
-                bottom: bottomOffset,
-                left: 15,
-                right: 15,
-              },
-            ]
-          : [
-              styles.absoluteLayer,
-              {
-                bottom: bottomOffset,
-                left: 15,
-                right: 15,
-              },
-            ],
+        styles.outerWrap,
+        Platform.OS === "web" ? styles.fixedViewport : styles.absoluteLayer,
+        {
+          bottom: bottomOffset,
+          ...(limitBarWidth
+            ? {
+                left: 0,
+                right: 0,
+                paddingHorizontal: 15,
+                alignItems: "center",
+              }
+            : { left: 15, right: 15 }),
+        },
         style,
       ]}
     >
+      <View
+        style={[
+          styles.shell,
+          limitBarWidth && {
+            maxWidth: FLOATING_BAR_MAX_WIDTH,
+            width: "100%",
+          },
+        ]}
+      >
       {Platform.OS === "ios" ? (
         <BlurView
           intensity={28}
@@ -183,11 +194,15 @@ export function BrowseFloatingBar({
           </Pressable>
         </View>
       </LinearGradient>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  outerWrap: {
+    zIndex: 999999,
+  },
   shell: {
     borderRadius: 14,
     overflow: "hidden",

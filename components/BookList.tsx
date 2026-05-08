@@ -69,9 +69,6 @@ export interface BookListProps<T extends Book = Book> {
 
 const _isWebGrid = Platform.OS === "web";
 
-/** На широком окне (web/Electron) сетка как на телефоне — ограничение ширины и центрирование. */
-const WEB_GRID_MAX_WIDTH = 560;
-
 export default function BookList<T extends Book = Book>({
   data,
   loading,
@@ -108,15 +105,6 @@ export default function BookList<T extends Book = Book>({
     "#1C1C1C";
 
   const base = useMemo<GridConfig>(() => {
-    if (Platform.OS === "web") {
-      const capW = Math.min(width, WEB_GRID_MAX_WIDTH);
-      if (capW <= 600) {
-        return (
-          gridConfig?.phonePortrait ??
-          gridConfig?.default ?? { numColumns: 2, paddingHorizontal: 10, columnGap: 5 }
-        );
-      }
-    }
     const isPortrait = height > width;
     const isTablet = width > 600;
     return isTablet
@@ -140,13 +128,7 @@ export default function BookList<T extends Book = Book>({
     const gap = base.columnGap ?? 0;
     const minW = base.minColumnWidth ?? 80;
 
-    const sideInset =
-      Platform.OS === "web" && !horizontal && width > WEB_GRID_MAX_WIDTH
-        ? (width - WEB_GRID_MAX_WIDTH) / 2
-        : 0;
-    const cappedWidth =
-      Platform.OS === "web" && !horizontal ? Math.min(width, WEB_GRID_MAX_WIDTH) : width;
-    const avail = Math.max(0, cappedWidth - padH * 2);
+    const avail = Math.max(0, width - padH * 2);
 
     const uniq = (() => {
       const seen = new Set<number>();
@@ -165,7 +147,7 @@ export default function BookList<T extends Book = Book>({
         cols: 1,
         cardWidth: cw,
         columnGap: gap,
-        paddingHorizontal: padH + sideInset,
+        paddingHorizontal: padH,
         uniqueData: uniq,
         estCardH: estH,
       };
@@ -182,7 +164,7 @@ export default function BookList<T extends Book = Book>({
       cols: maxCols,
       cardWidth: cw,
       columnGap: gap,
-      paddingHorizontal: padH + sideInset,
+      paddingHorizontal: padH,
       uniqueData: uniq,
       estCardH: estH,
     };
@@ -561,6 +543,7 @@ export default function BookList<T extends Book = Book>({
             ref={listRef}
             key={listKey}
             horizontal={horizontal}
+            nestedScrollEnabled={Platform.OS === "android"}
             showsHorizontalScrollIndicator={false}
             decelerationRate={horizontal ? "fast" : undefined}
             snapToAlignment={horizontal ? "start" : undefined}
