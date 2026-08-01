@@ -59,7 +59,7 @@
     "@react-navigation/elements": "^2.3.8",
     "@react-navigation/native": "^7.1.6",
     "@shopify/flash-list": "2.0.2",
-    "axios": "^1.15.2",
+    "axios": "^1.18.0",
     "date-fns": "^4.1.0",
     "expo": "^55.0.19",
     "expo-application": "~55.0.14",
